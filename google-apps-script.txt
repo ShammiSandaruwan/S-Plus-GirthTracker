@@ -1,0 +1,83 @@
+// Deploy this script as a "Web App" accessible to "Anyone"
+// Replace YOUR_SHEET_ID with the actual Google Sheet ID
+// Or map Estate names to specific Sheet IDs
+
+// Shared secret for basic auth — must match VITE_GAS_SECRET in client .env
+const SHARED_SECRET = "CHANGE_ME_TO_A_RANDOM_STRING";
+
+const ESTATE_SHEET_MAP = {
+  "Your Estate Name": "YOUR_GOOGLE_SHEET_ID_HERE",
+  // Add more estates here:
+  // "Another Estate": "THEIR_SHEET_ID"
+};
+
+function doPost(e) {
+  try {
+    const parsed = JSON.parse(e.postData.contents);
+    
+    // Support both formats: { secret, measurements } or plain array
+    let measurements;
+    let clientSecret = '';
+    if (Array.isArray(parsed)) {
+      measurements = parsed;
+    } else {
+      clientSecret = parsed.secret || '';
+      measurements = parsed.measurements || [];
+    }
+
+    // Validate shared secret if configured
+    if (SHARED_SECRET && SHARED_SECRET !== "CHANGE_ME_TO_A_RANDOM_STRING") {
+      if (clientSecret !== SHARED_SECRET) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unauthorized" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    
+    if (!Array.isArray(measurements)) measurements = [measurements];
+    
+    if (measurements.length === 0) {
+      return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Empty batch" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    // Group by Estate so we can append to correct sheets
+    const grouped = {};
+    measurements.forEach(m => {
+      if (!grouped[m.estate]) grouped[m.estate] = [];
+      grouped[m.estate].push(m);
+    });
+    
+    for (const estate in grouped) {
+      const sheetId = ESTATE_SHEET_MAP[estate];
+      if (!sheetId) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown Estate: " + estate }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      const ss = SpreadsheetApp.openById(sheetId);
+      const sheet = ss.getSheets()[0]; // Assumes first sheet
+      
+      const rowsToAppend = grouped[estate].map(m => [
+        m.estate,         // A
+        m.division,       // B
+        m.fieldNo,        // C
+        m.extent,         // D
+        m.treeNo,         // E
+        m.caliperReading, // F
+        m.girth,          // G
+        m.timestamp       // H
+      ]);
+      
+      // Append in bulk (faster)
+      const startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
