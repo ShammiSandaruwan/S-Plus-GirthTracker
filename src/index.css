@@ -477,6 +477,15 @@ input:focus, select:focus {
   max-width: 28rem;
 }
 
+.app-version {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+  padding: 0.5rem 0;
+  flex-shrink: 0;
+}
+
 /* Mobile Responsiveness */
 @media (max-width: 480px) {
   .app-container {

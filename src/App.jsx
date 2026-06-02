@@ -2,18 +2,16 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle } from 'lucide-react';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING } from './utils';
 import './index.css';
 
+const APP_VERSION = '1.1.0';
 const GAS_URL = import.meta.env.VITE_GAS_URL || '';
 const GAS_SECRET = import.meta.env.VITE_GAS_SECRET || '';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
 const IS_MAINTENANCE_MODE = isEnvFlagEnabled(import.meta.env.VITE_MAINTENANCE_MODE);
 const IS_DISABLED_MODE = isEnvFlagEnabled(import.meta.env.VITE_DISABLED_MODE);
-
-// Caliper reading validation range (inches)
-const MIN_READING = 0.5;
-const MAX_READING = 30;
 
 // Parse estate list from environment
 const ESTATES = import.meta.env.VITE_ESTATES
@@ -237,7 +235,7 @@ function TrackerApp() {
     
     const currentSettings = settingsRef.current;
     
-    const girth = parseFloat((caliperReading * Math.PI).toFixed(2));
+    const girth = calculateGirth(caliperReading);
     
     const newMeasurement = {
       estate: currentSettings.estate,
@@ -275,14 +273,10 @@ function TrackerApp() {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
       if (e.key === 'Enter' || e.key === '\r') {
-        const raw = bufferRef.current.trim().replace(/,/g, '.').replace(/[^\d.]/g, '');
-        let value = parseFloat(raw);
+        const value = parseCaliperBuffer(bufferRef.current);
 
-        if (value > 1000) {
-          value = value / 10000;
-        }
 
-        if (!isNaN(value) && value > 0) {
+        if (value !== null) {
           saveMeasurement(value);
         }
         
@@ -292,7 +286,7 @@ function TrackerApp() {
       } else if (/^[0-9.,]$/.test(e.key) || /^[A-Za-z\s]$/.test(e.key)) {
         bufferRef.current += e.key;
         // Only show numeric portion in display
-        setDisplayBuffer(bufferRef.current.replace(/[^\d.]/g, ''));
+        setDisplayBuffer(filterDisplayBuffer(bufferRef.current));
       }
     };
 
@@ -358,20 +352,14 @@ function TrackerApp() {
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    const raw = manualEntry.trim().replace(/,/g, '.').replace(/[^\d.]/g, '');
-    let value = parseFloat(raw);
-    
-    if (value > 1000) {
-      value = value / 10000;
-    }
+    const value = parseCaliperBuffer(manualEntry);
 
-    if (!isNaN(value) && value > 0) {
+    if (value !== null) {
       saveMeasurement(value);
       setManualEntry('');
     }
   };
 
-  const escCsv = (val) => `"${String(val).replace(/"/g, '""')}"`;
 
   const handleExportCSV = async () => {
     const all = await db.measurements.toArray();
@@ -742,6 +730,8 @@ function TrackerApp() {
           </div>
         )}
       </div>
+
+      <div className="app-version">v{APP_VERSION}</div>
     </div>
   );
 }
