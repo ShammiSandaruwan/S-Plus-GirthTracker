@@ -1,4 +1,4 @@
-# Buyer License — GirthTracker
+# Buyer License - GirthTracker
 
 This license template is intended for selling GirthTracker as a digital source-code product.
 

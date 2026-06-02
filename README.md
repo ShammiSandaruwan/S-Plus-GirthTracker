@@ -2,7 +2,7 @@
   <img src="public/pwa-192x192.png" alt="GirthTracker Logo" width="96" />
 </p>
 
-<h1 align="center">🌿 GirthTracker — Rubber Tree Girth Tracker PWA</h1>
+<h1 align="center">🌿 GirthTracker - Rubber Tree Girth Tracker PWA</h1>
 
 <p align="center">
   <strong>An offline-first Progressive Web App built for rubber estate field workers to measure and record tree girth using Bluetooth digital calipers.</strong>
@@ -22,7 +22,7 @@
 
 ## 📖 Overview
 
-**GirthTracker** is a field-ready, installable web application designed specifically for rubber estate operations. Field workers can measure tree girth using industrial Bluetooth calipers (e.g., SYNTEK IP67) that emulate a Bluetooth keyboard (HID profile). The app captures caliper readings **hands-free** — no tapping or focusing required — calculates the girth automatically, stores data offline, and syncs everything to Google Sheets when connectivity is restored.
+**GirthTracker** is a field-ready, installable web application designed specifically for rubber estate operations. Field workers can measure tree girth using industrial Bluetooth calipers (e.g., SYNTEK IP67) that emulate a Bluetooth keyboard (HID profile). The app captures caliper readings **hands-free** (no tapping or focusing required), calculates the girth automatically, stores data offline, and syncs everything to Google Sheets when connectivity is restored.
 
 ---
 
@@ -31,11 +31,11 @@
 | Feature | Description |
 |---|---|
 | 📴 **Offline-First** | Full PWA with Service Workers. Works without internet; all data persisted locally in IndexedDB. |
-| 📡 **Bluetooth Caliper Integration** | Listens globally for Bluetooth HID keystrokes from industrial calipers — completely hands-free. |
+| 📡 **Bluetooth Caliper Integration** | Listens globally for Bluetooth HID keystrokes from industrial calipers. Completely hands-free. |
 | 🔢 **Auto Calculations** | Automatically computes `Girth = Caliper Reading × π` and increments the tree number. |
 | ☁️ **Background Sync** | Auto-detects connectivity and syncs pending records to Google Sheets. Periodic retry every 30 seconds. |
 | 🛡️ **Shared-Secret Auth** | Secures the Google Apps Script endpoint with a configurable shared secret. |
-| ⚠️ **Range Validation** | Rejects caliper readings outside the configurable 0.5–30 inch valid range. |
+| ⚠️ **Range Validation** | Rejects caliper readings outside the configurable 0.5-30 inch valid range. |
 | ↩️ **Undo with Confirmation** | Two-tap undo to prevent accidental deletions. Restores the tree number. |
 | ✏️ **Manual Entry Fallback** | In case Bluetooth fails, manually type a caliper reading. |
 | 📊 **CSV Export** | Export all local measurement data as a `.csv` file for offline analysis. |
@@ -88,11 +88,11 @@
 | **PWA Plugin** | [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) | 1.x |
 | **Local Database** | [Dexie.js](https://dexie.org/) (IndexedDB wrapper) | 4.x |
 | **Icons** | [Lucide React](https://lucide.dev/) | 1.x |
-| **Styling** | Vanilla CSS with CSS Custom Properties | — |
-| **Cloud Backend** | [Google Apps Script](https://developers.google.com/apps-script) | — |
-| **Data Store** | [Google Sheets](https://sheets.google.com) | — |
+| **Styling** | Vanilla CSS with CSS Custom Properties | - |
+| **Cloud Backend** | [Google Apps Script](https://developers.google.com/apps-script) | - |
+| **Data Store** | [Google Sheets](https://sheets.google.com) | - |
 | **Linting** | [ESLint](https://eslint.org/) | 10.x |
-| **Hosting** | [Vercel](https://vercel.com/) *(recommended)* | — |
+| **Hosting** | [Vercel](https://vercel.com/) *(recommended)* | - |
 
 ---
 
@@ -234,7 +234,7 @@ VITE_DISABLED_MODE="false"
 2. Place the caliper on the tree and press the **Data Send** button.
 3. The app automatically:
    - Receives the Bluetooth HID keystroke
-   - Validates the reading (0.5–30 inch range)
+   - Validates the reading (0.5-30 inch range)
    - Calculates girth (`reading × π`)
    - Saves to local IndexedDB
    - Increments the tree number
@@ -260,7 +260,7 @@ VITE_DISABLED_MODE="false"
 1. Push the repository to GitHub.
 2. Import the project in [Vercel](https://vercel.com/).
 3. Add your environment variables in **Project Settings → Environment Variables**.
-4. Deploy — Vercel auto-detects Vite and handles the build.
+4. Deploy. Vercel auto-detects Vite and handles the build.
 
 ### Manual / Self-Hosted
 

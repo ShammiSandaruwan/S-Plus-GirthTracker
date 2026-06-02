@@ -1,4 +1,4 @@
-# Support Policy — GirthTracker
+# Support Policy - GirthTracker
 
 This support policy is written for selling GirthTracker as a downloadable digital source-code product.
 
@@ -61,9 +61,9 @@ Prices depend on scope, urgency, and complexity.
 
 For a small digital product, suggested response time is:
 
-- Basic product access issue: 1–3 business days
-- Documentation clarification: 2–5 business days
-- Custom work inquiries: 2–5 business days
+- Basic product access issue: 1-3 business days
+- Documentation clarification: 2-5 business days
+- Custom work inquiries: 2-5 business days
 
 Do not promise instant support unless you are prepared to provide it.
 

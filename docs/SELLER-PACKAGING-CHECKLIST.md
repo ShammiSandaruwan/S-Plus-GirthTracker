@@ -1,4 +1,4 @@
-# Seller Packaging Checklist — GirthTracker
+# Seller Packaging Checklist - GirthTracker
 
 Use this checklist before uploading the product ZIP to Gumroad or another digital marketplace.
 
@@ -146,11 +146,11 @@ Do not show real estate/customer data.
 
 ## 7. Suggested Demo Video Script
 
-Length: 60–90 seconds.
+Length: 60-90 seconds.
 
 Suggested structure:
 
-1. Show title: `GirthTracker — Offline Rubber Tree Girth Tracker PWA`
+1. Show title: `GirthTracker - Offline Rubber Tree Girth Tracker PWA`
 2. Explain the problem: field workers need fast tree measurements even without internet.
 3. Show setup screen.
 4. Show manual test measurement.
@@ -215,10 +215,10 @@ After the product is live:
 Use semantic versioning:
 
 ```text
-v1.0.0 — initial Gumroad release
-v1.0.1 — documentation/fix update
-v1.1.0 — small new feature
-v2.0.0 — major redesign or architecture change
+v1.0.0 - initial Gumroad release
+v1.0.1 - documentation/fix update
+v1.1.0 - small new feature
+v2.0.0 - major redesign or architecture change
 ```
 
 Keep a short changelog so buyers know what changed.

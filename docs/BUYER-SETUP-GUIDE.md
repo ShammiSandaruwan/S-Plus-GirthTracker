@@ -1,4 +1,4 @@
-# Buyer Setup Guide — GirthTracker
+# Buyer Setup Guide - GirthTracker
 
 Thank you for purchasing **GirthTracker**, an offline-first rubber tree girth measurement PWA.
 

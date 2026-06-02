@@ -1,4 +1,4 @@
-# Gumroad Listing Copy — GirthTracker
+# Gumroad Listing Copy - GirthTracker
 
 Use this page as the master copy for creating the Gumroad product listing.
 
@@ -6,7 +6,7 @@ Use this page as the master copy for creating the Gumroad product listing.
 
 ## Recommended Product Title
 
-**GirthTracker — Offline Rubber Tree Girth Measurement PWA Source Code**
+**GirthTracker - Offline Rubber Tree Girth Measurement PWA Source Code**
 
 ## Short Subtitle
 
@@ -120,7 +120,7 @@ This positions the app as a premium niche source-code product, not a cheap gener
 
 ### Launch Discount
 
-For the first 10–20 sales, use:
+For the first 10-20 sales, use:
 
 **USD $49 launch price**
 
@@ -136,7 +136,7 @@ If using Gumroad variants or separate products:
 |---|---:|---|
 | Starter Source License | $49 | Individual learning, testing, one internal project |
 | Commercial License | $79 | One commercial deployment for own business |
-| Extended Client License | $149–$199 | Use for one paid client project |
+| Extended Client License | $149-$199 | Use for one paid client project |
 | Done-With-You Setup Add-on | $299+ | You help configure Google Sheets, deploy, and customize branding |
 
 Recommended first setup:
