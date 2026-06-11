@@ -11,3 +11,8 @@ db.version(2).stores({
   measurements: '++id, syncStatus, [estate+fieldNo]',
   settings: 'id'
 });
+
+db.version(3).stores({
+  measurements: '++id, syncStatus, [estate+fieldNo], sessionId, timestamp, abnormalFlag, recommendationStatus',
+  settings: 'id, estate, deviceId, accessStatus'
+});

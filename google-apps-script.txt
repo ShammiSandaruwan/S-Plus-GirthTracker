@@ -1,83 +1,444 @@
-// Deploy this script as a "Web App" accessible to "Anyone"
-// Replace YOUR_SHEET_ID with the actual Google Sheet ID
-// Or map Estate names to specific Sheet IDs
+// GirthTracker Google Apps Script Backend
+// ----------------------------------------------------
+// REQUIRED SCRIPT PROPERTIES:
+// - TELEGRAM_BOT_TOKEN
+// - TELEGRAM_CHAT_ID
+// - ADMIN_APPROVAL_KEY
 
-// Shared secret for basic auth — must match VITE_GAS_SECRET in client .env
-const SHARED_SECRET = "CHANGE_ME_TO_A_RANDOM_STRING";
+const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
+const TELEGRAM_BOT_TOKEN = SCRIPT_PROPERTIES.getProperty('TELEGRAM_BOT_TOKEN');
+const TELEGRAM_CHAT_ID = SCRIPT_PROPERTIES.getProperty('TELEGRAM_CHAT_ID');
+const ADMIN_APPROVAL_KEY = SCRIPT_PROPERTIES.getProperty('ADMIN_APPROVAL_KEY');
 
 const ESTATE_SHEET_MAP = {
-  "Your Estate Name": "YOUR_GOOGLE_SHEET_ID_HERE",
-  // Add more estates here:
-  // "Another Estate": "THEIR_SHEET_ID"
+  "Your Estate Name": "YOUR_GOOGLE_SHEET_ID_HERE"
 };
+
+const WEB_APP_URL = ScriptApp.getService().getUrl();
 
 function doPost(e) {
   try {
     const parsed = JSON.parse(e.postData.contents);
-    
-    // Support both formats: { secret, measurements } or plain array
-    let measurements;
-    let clientSecret = '';
-    if (Array.isArray(parsed)) {
-      measurements = parsed;
-    } else {
-      clientSecret = parsed.secret || '';
-      measurements = parsed.measurements || [];
+    const action = parsed.action;
+
+    if (action === "request_access") {
+      return handleRequestAccess(parsed);
+    } else if (action === "check_access") {
+      return handleCheckAccess(parsed);
+    } else if (action === "sync_measurements") {
+      return handleSyncMeasurements(parsed);
     }
 
-    // Validate shared secret if configured
-    if (SHARED_SECRET && SHARED_SECRET !== "CHANGE_ME_TO_A_RANDOM_STRING") {
-      if (clientSecret !== SHARED_SECRET) {
-        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unauthorized" }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-    }
-    
-    if (!Array.isArray(measurements)) measurements = [measurements];
-    
-    if (measurements.length === 0) {
-      return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Empty batch" }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    
-    // Group by Estate so we can append to correct sheets
-    const grouped = {};
-    measurements.forEach(m => {
-      if (!grouped[m.estate]) grouped[m.estate] = [];
-      grouped[m.estate].push(m);
-    });
-    
-    for (const estate in grouped) {
-      const sheetId = ESTATE_SHEET_MAP[estate];
-      if (!sheetId) {
-        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown Estate: " + estate }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      
-      const ss = SpreadsheetApp.openById(sheetId);
-      const sheet = ss.getSheets()[0]; // Assumes first sheet
-      
-      const rowsToAppend = grouped[estate].map(m => [
-        m.estate,         // A
-        m.division,       // B
-        m.fieldNo,        // C
-        m.extent,         // D
-        m.treeNo,         // E
-        m.caliperReading, // F
-        m.girth,          // G
-        m.timestamp       // H
-      ]);
-      
-      // Append in bulk (faster)
-      const startRow = sheet.getLastRow() + 1;
-      sheet.getRange(startRow, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
-    }
-
-    return ContentService.createTextOutput(JSON.stringify({ success: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-
+    return respondJson({ success: false, error: "Unknown action" });
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return respondJson({ success: false, error: error.toString() });
+  }
+}
+
+function doGet(e) {
+  const action = e.parameter.action;
+  const requestId = e.parameter.requestId;
+  const adminKey = e.parameter.adminKey;
+
+  if (adminKey !== ADMIN_APPROVAL_KEY) {
+    return ContentService.createTextOutput("Invalid admin key.");
+  }
+
+  if (!requestId) {
+    return ContentService.createTextOutput("Request not found.");
+  }
+
+  try {
+    if (action === "approve") {
+      return handleApprove(requestId);
+    } else if (action === "deny") {
+      return handleDeny(requestId);
+    }
+    return ContentService.createTextOutput("Unknown action.");
+  } catch (error) {
+    return ContentService.createTextOutput("Error: " + error.toString());
+  }
+}
+
+// ----------------------------------------------------
+// Request Access
+// ----------------------------------------------------
+function handleRequestAccess(parsed) {
+  const { estate, operatorName, deviceId, location, userAgent, appVersion } = parsed;
+  const requestId = "REQ-" + Utilities.getUuid();
+  const deviceIdHash = computeHash(deviceId);
+
+  const sheet = getOrCreateSheet("AccessRequests", [
+    "requestId", "createdAt", "estate", "operatorName", "deviceIdHash",
+    "latitude", "longitude", "gpsAccuracy", "gpsStatus", "googleMapLink",
+    "userAgent", "appVersion", "status", "approvedAt", "deniedAt", "adminAction", "notes"
+  ]);
+
+  sheet.appendRow([
+    requestId,
+    new Date().toISOString(),
+    estate,
+    operatorName,
+    deviceIdHash,
+    location?.latitude || "",
+    location?.longitude || "",
+    location?.accuracy || "",
+    location?.status || "",
+    location?.googleMapLink || "",
+    userAgent || "",
+    appVersion || "",
+    "pending",
+    "",
+    "",
+    "",
+    ""
+  ]);
+
+  let telegramStatus = "sent";
+  if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+    const text = `*New GirthTracker Access Request*\n\n` +
+                 `*Estate:* ${estate}\n` +
+                 `*Operator:* ${operatorName}\n` +
+                 `*Location:* ${location?.googleMapLink || location?.status || 'unavailable'}\n` +
+                 `*GPS Status:* ${location?.status || 'unknown'}\n` +
+                 `*Time:* ${new Date().toISOString()}\n\n` +
+                 `Please approve or deny this device.`;
+
+    const keyboard = {
+      inline_keyboard: [[
+        { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
+        { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
+      ]]
+    };
+
+    try {
+      UrlFetchApp.fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: text,
+          parse_mode: "Markdown",
+          reply_markup: keyboard
+        })
+      });
+    } catch (e) {
+      telegramStatus = "failed";
+    }
+  } else {
+    telegramStatus = "failed";
+  }
+
+  return respondJson({
+    success: true,
+    requestId: requestId,
+    status: "pending",
+    message: "Access request submitted.",
+    telegramStatus: telegramStatus
+  });
+}
+
+// ----------------------------------------------------
+// Check Access
+// ----------------------------------------------------
+function handleCheckAccess(parsed) {
+  const { requestId, deviceId } = parsed;
+  const deviceIdHash = computeHash(deviceId);
+
+  const reqSheet = getOrCreateSheet("AccessRequests");
+  const data = reqSheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  let status = "not_found";
+  let approvedAt = "";
+  let estate = "";
+  let operatorName = "";
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][headers.indexOf("requestId")] === requestId && data[i][headers.indexOf("deviceIdHash")] === deviceIdHash) {
+      status = data[i][headers.indexOf("status")];
+      approvedAt = data[i][headers.indexOf("approvedAt")];
+      estate = data[i][headers.indexOf("estate")];
+      operatorName = data[i][headers.indexOf("operatorName")];
+      break;
+    }
+  }
+
+  if (status === "pending") {
+    return respondJson({ success: true, status: "pending" });
+  } else if (status === "denied") {
+    return respondJson({ success: true, status: "denied", message: "Access request denied." });
+  } else if (status === "approved") {
+    const deviceToken = getDeviceToken(deviceIdHash);
+    if (!deviceToken) {
+       return respondJson({ success: false, error: "Token not found despite approval." });
+    }
+    return respondJson({
+      success: true,
+      status: "approved",
+      deviceToken: deviceToken,
+      estate: estate,
+      operatorName: operatorName,
+      approvedAt: approvedAt,
+      expiresAt: ""
+    });
+  }
+
+  return respondJson({ success: false, error: "Request not found." });
+}
+
+// ----------------------------------------------------
+// Sync Measurements
+// ----------------------------------------------------
+function handleSyncMeasurements(parsed) {
+  const { deviceId, deviceToken, estate, operatorName, measurements } = parsed;
+
+  const authResult = validateDevice(deviceId, deviceToken, estate, operatorName);
+  if (!authResult.success) {
+    return respondJson({
+      success: false,
+      errorType: authResult.errorType,
+      error: authResult.error
+    });
+  }
+
+  if (!Array.isArray(measurements) || measurements.length === 0) {
+    return respondJson({ success: true, message: "Empty batch" });
+  }
+
+  const sheetId = ESTATE_SHEET_MAP[estate];
+  let sheet;
+  if (sheetId) {
+    sheet = SpreadsheetApp.openById(sheetId).getSheets()[0];
+  } else {
+    sheet = getOrCreateSheet("Measurements_" + estate, [
+      "Estate", "Division", "Field No", "Extent", "Tree No", "Operator Name", "Session ID",
+      "Caliper Reading", "Girth Inches", "Girth CM", "Tapping Recommendation",
+      "Abnormal Flag", "Abnormal Reason", "Latitude", "Longitude", "GPS Accuracy",
+      "Google Map Link", "Timestamp", "Device ID Hash", "Sync Batch ID"
+    ]);
+  }
+
+  const deviceIdHash = computeHash(deviceId);
+  const syncBatchId = "BATCH-" + Utilities.getUuid();
+  
+  const rowsToAppend = measurements.map(m => [
+    m.estate,
+    m.division,
+    m.fieldNo,
+    m.extent,
+    m.treeNo,
+    m.operatorName || operatorName,
+    m.sessionId || "",
+    m.caliperReading,
+    m.girth,
+    m.girthCm || "",
+    m.recommendationText || "",
+    m.abnormalFlag ? "Yes" : "No",
+    m.abnormalReason || "",
+    m.latitude || "",
+    m.longitude || "",
+    m.gpsAccuracy || "",
+    m.googleMapLink || "",
+    m.timestamp,
+    deviceIdHash,
+    syncBatchId
+  ]);
+
+  if (rowsToAppend.length > 0) {
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+  }
+
+  updateLastSeen(deviceIdHash);
+
+  return respondJson({
+    success: true,
+    syncedIds: measurements.map(m => m.id),
+    failed: []
+  });
+}
+
+// ----------------------------------------------------
+// Admin Actions (doGet)
+// ----------------------------------------------------
+function handleApprove(requestId) {
+  const reqSheet = getOrCreateSheet("AccessRequests");
+  const reqData = reqSheet.getDataRange().getValues();
+  const headers = reqData[0];
+  
+  let rowIndex = -1;
+  let rowData = null;
+
+  for (let i = 1; i < reqData.length; i++) {
+    if (reqData[i][headers.indexOf("requestId")] === requestId) {
+      rowIndex = i + 1;
+      rowData = reqData[i];
+      break;
+    }
+  }
+
+  if (rowIndex === -1) return ContentService.createTextOutput("Request not found.");
+  
+  const status = rowData[headers.indexOf("status")];
+  if (status === "approved") return ContentService.createTextOutput("This request has already been approved.");
+
+  const deviceIdHash = rowData[headers.indexOf("deviceIdHash")];
+  const estate = rowData[headers.indexOf("estate")];
+  const operatorName = rowData[headers.indexOf("operatorName")];
+  
+  const deviceToken = "TOK-" + Utilities.getUuid();
+  const tokenHash = computeHash(deviceToken);
+  const approvedAt = new Date().toISOString();
+
+  // Update AccessRequests
+  reqSheet.getRange(rowIndex, headers.indexOf("status") + 1).setValue("approved");
+  reqSheet.getRange(rowIndex, headers.indexOf("approvedAt") + 1).setValue(approvedAt);
+  reqSheet.getRange(rowIndex, headers.indexOf("adminAction") + 1).setValue("approved via telegram");
+
+  // Save to ApprovedDevices
+  const appSheet = getOrCreateSheet("ApprovedDevices", [
+    "deviceIdHash", "tokenHash", "estate", "operatorName", "approvedAt", "expiresAt", "revoked", "lastSeenAt", "lastSyncAt", "notes"
+  ]);
+  
+  // Check if device already exists, update or append
+  const appData = appSheet.getDataRange().getValues();
+  let existingAppRow = -1;
+  for(let i=1; i < appData.length; i++){
+     if(appData[i][0] === deviceIdHash){
+       existingAppRow = i + 1;
+       break;
+     }
+  }
+
+  if (existingAppRow > -1) {
+      appSheet.getRange(existingAppRow, 2).setValue(tokenHash); // tokenHash
+      appSheet.getRange(existingAppRow, 3).setValue(estate); // estate
+      appSheet.getRange(existingAppRow, 4).setValue(operatorName); // operatorName
+      appSheet.getRange(existingAppRow, 5).setValue(approvedAt); // approvedAt
+      appSheet.getRange(existingAppRow, 7).setValue(false); // revoked
+  } else {
+      appSheet.appendRow([
+        deviceIdHash, tokenHash, estate, operatorName, approvedAt, "", false, "", "", ""
+      ]);
+  }
+
+  // We need to pass the raw token back to the device, so we temporarily store it in a Cache to be retrieved by the check_access call
+  CacheService.getScriptCache().put("token_" + deviceIdHash, deviceToken, 21600); // 6 hours
+
+  return ContentService.createTextOutput("Access approved successfully.");
+}
+
+function handleDeny(requestId) {
+  const reqSheet = getOrCreateSheet("AccessRequests");
+  const reqData = reqSheet.getDataRange().getValues();
+  const headers = reqData[0];
+  
+  let rowIndex = -1;
+
+  for (let i = 1; i < reqData.length; i++) {
+    if (reqData[i][headers.indexOf("requestId")] === requestId) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (rowIndex === -1) return ContentService.createTextOutput("Request not found.");
+
+  reqSheet.getRange(rowIndex, headers.indexOf("status") + 1).setValue("denied");
+  reqSheet.getRange(rowIndex, headers.indexOf("deniedAt") + 1).setValue(new Date().toISOString());
+  reqSheet.getRange(rowIndex, headers.indexOf("adminAction") + 1).setValue("denied via telegram");
+
+  return ContentService.createTextOutput("Access request denied.");
+}
+
+// ----------------------------------------------------
+// Utilities
+// ----------------------------------------------------
+function computeHash(input) {
+  if (!input) return "";
+  const rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, input);
+  let txtHash = '';
+  for (let i = 0; i < rawHash.length; i++) {
+    let hashVal = rawHash[i];
+    if (hashVal < 0) hashVal += 256;
+    if (hashVal.toString(16).length == 1) txtHash += '0';
+    txtHash += hashVal.toString(16);
+  }
+  return txtHash;
+}
+
+function respondJson(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getOrCreateSheet(sheetName, headers = []) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    if (headers.length > 0) {
+      sheet.appendRow(headers);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+    }
+  }
+  return sheet;
+}
+
+function getDeviceToken(deviceIdHash) {
+  return CacheService.getScriptCache().get("token_" + deviceIdHash);
+}
+
+function validateDevice(deviceId, deviceToken, estate, operatorName) {
+  const deviceIdHash = computeHash(deviceId);
+  const tokenHash = computeHash(deviceToken);
+
+  const appSheet = getOrCreateSheet("ApprovedDevices");
+  const appData = appSheet.getDataRange().getValues();
+  const headers = appData[0];
+  
+  if (!headers) return { success: false, errorType: "auth_failed", error: "No approved devices." };
+
+  for (let i = 1; i < appData.length; i++) {
+    const row = appData[i];
+    if (row[headers.indexOf("deviceIdHash")] === deviceIdHash) {
+      if (row[headers.indexOf("revoked")] === true) {
+        return { success: false, errorType: "auth_failed", error: "Device revoked." };
+      }
+      
+      const expiresAt = row[headers.indexOf("expiresAt")];
+      if (expiresAt && new Date(expiresAt) < new Date()) {
+        return { success: false, errorType: "subscription_expired", error: "Access expired. Please contact administrator." };
+      }
+
+      if (row[headers.indexOf("tokenHash")] !== tokenHash) {
+         return { success: false, errorType: "auth_failed", error: "Invalid token." };
+      }
+
+      if (row[headers.indexOf("estate")] !== estate) {
+         return { success: false, errorType: "auth_failed", error: "Estate mismatch." };
+      }
+
+      return { success: true };
+    }
+  }
+
+  return { success: false, errorType: "auth_failed", error: "Device not approved." };
+}
+
+function updateLastSeen(deviceIdHash) {
+  const appSheet = getOrCreateSheet("ApprovedDevices");
+  const appData = appSheet.getDataRange().getValues();
+  const headers = appData[0];
+  
+  if(!headers) return;
+
+  for (let i = 1; i < appData.length; i++) {
+    if (appData[i][headers.indexOf("deviceIdHash")] === deviceIdHash) {
+      appSheet.getRange(i + 1, headers.indexOf("lastSeenAt") + 1).setValue(new Date().toISOString());
+      appSheet.getRange(i + 1, headers.indexOf("lastSyncAt") + 1).setValue(new Date().toISOString());
+      break;
+    }
   }
 }

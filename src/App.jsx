@@ -1,17 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle } from 'lucide-react';
+import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText } from 'lucide-react';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING } from './utils';
+import AccessGate from './components/AccessGate';
+import SessionReport from './components/SessionReport';
+import FieldInsights from './components/FieldInsights';
+import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
+import { girthToCm, getRecommendation } from './services/recommendation';
+import { checkAbnormal } from './services/analytics';
 import './index.css';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.1.0';
 const GAS_URL = import.meta.env.VITE_GAS_URL || '';
-const GAS_SECRET = import.meta.env.VITE_GAS_SECRET || '';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
 const IS_MAINTENANCE_MODE = isEnvFlagEnabled(import.meta.env.VITE_MAINTENANCE_MODE);
 const IS_DISABLED_MODE = isEnvFlagEnabled(import.meta.env.VITE_DISABLED_MODE);
+const REQUIRE_ACCESS_APPROVAL = isEnvFlagEnabled(import.meta.env.VITE_REQUIRE_ACCESS_APPROVAL);
+const ENABLE_SESSION_REPORTS = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_SESSION_REPORTS);
+const ENABLE_GPS_TAGGING = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_GPS_TAGGING);
 
 // Parse estate list from environment
 const ESTATES = import.meta.env.VITE_ESTATES
@@ -20,6 +28,9 @@ const ESTATES = import.meta.env.VITE_ESTATES
   .filter(Boolean) || [];
 
 function App() {
+  const [accessApproved, setAccessApproved] = useState(!REQUIRE_ACCESS_APPROVAL);
+  const [approvedData, setApprovedData] = useState(null);
+
   if (IS_DISABLED_MODE) {
     return (
       <ModeNotice
@@ -39,7 +50,16 @@ function App() {
     );
   }
 
-  return <TrackerApp />;
+  if (REQUIRE_ACCESS_APPROVAL && !accessApproved) {
+    return (
+      <AccessGate onApproved={(data) => {
+        setApprovedData(data);
+        setAccessApproved(true);
+      }} />
+    );
+  }
+
+  return <TrackerApp approvedData={approvedData} />;
 }
 
 function ModeNotice({ title, message, variant = 'warning' }) {
@@ -56,7 +76,7 @@ function ModeNotice({ title, message, variant = 'warning' }) {
   );
 }
 
-function TrackerApp() {
+function TrackerApp({ approvedData }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [settings, setSettings] = useState({
@@ -65,9 +85,17 @@ function TrackerApp() {
     fieldNo: '',
     extent: '',
     treeNo: 1,
+    operatorName: '',
+    deviceId: '',
+    deviceToken: '',
+    sessionId: '',
+    sessionStartedAt: null,
+    lastKnownLatitude: null,
+    lastKnownLongitude: null,
+    lastKnownGpsAccuracy: null,
+    lastKnownGoogleMapLink: null,
   });
   
-  // Use Refs for values that change rapidly to avoid closure bugs in event listeners
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   
@@ -85,18 +113,36 @@ function TrackerApp() {
   const [setupConfirm, setSetupConfirm] = useState(false);
   const [rangeError, setRangeError] = useState('');
   const [syncError, setSyncError] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [abnormalWarning, setAbnormalWarning] = useState('');
+  const [showSessionReport, setShowSessionReport] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
-      const stored = await db.settings.toCollection().first();
+      let stored = await db.settings.get(1);
+      
+      // Merge with approved data if it exists
+      if (approvedData) {
+        stored = { ...stored, ...approvedData };
+        await db.settings.put({ id: 1, ...stored });
+      }
+
       if (stored) {
         setSettings(stored);
-        setIsSetupComplete(true);
+        if (stored.estate && stored.division && stored.fieldNo && stored.operatorName) {
+           // We keep setup incomplete if we want the user to confirm field/division every time, 
+           // but let's restore it if sessionId is present and recent. For simplicity, let's just 
+           // require them to hit "Save & Start" again to generate a new session ID if they refresh,
+           // OR if there is an active session, skip it.
+           if (stored.sessionId) {
+              setIsSetupComplete(true);
+           }
+        }
       }
       setIsLoading(false);
     };
     loadSettings();
-  }, []);
+  }, [approvedData]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -124,7 +170,7 @@ function TrackerApp() {
     };
   }, []);
 
-  // Screen wake lock with visibility change re-acquisition
+  // Screen wake lock
   useEffect(() => {
     let wakeLock = null;
 
@@ -153,11 +199,30 @@ function TrackerApp() {
     };
   }, [isSetupComplete]);
 
+  // Background GPS
+  useEffect(() => {
+    if (isSetupComplete && ENABLE_GPS_TAGGING) {
+      startBackgroundGPS((location) => {
+        setSettings(prev => {
+          const updated = {
+            ...prev,
+            lastKnownLatitude: location.latitude,
+            lastKnownLongitude: location.longitude,
+            lastKnownGpsAccuracy: location.accuracy,
+            lastKnownGoogleMapLink: location.googleMapLink
+          };
+          db.settings.put({ id: 1, ...updated });
+          return updated;
+        });
+      });
+      return () => stopBackgroundGPS();
+    }
+  }, [isSetupComplete]);
+
   const syncPending = useCallback(async () => {
-    if (!isOnline || isSyncingRef.current) return;
+    if (!isOnline || isSyncingRef.current || authError) return;
     if (!GAS_URL || GAS_URL.includes('YOUR_SCRIPT_ID')) return;
     
-    // Set guard before any await to prevent race condition
     isSyncingRef.current = true;
     setSyncing(true);
 
@@ -167,40 +232,66 @@ function TrackerApp() {
       setSyncing(false);
       return;
     }
+
     try {
-      // Embed secret in the POST body, not the URL, to avoid Google server log leakage
-      const body = GAS_SECRET
-        ? { secret: GAS_SECRET, measurements: pending }
-        : pending;
-      const payload = JSON.stringify(body);
-      
-      const response = await fetch(GAS_URL, {
-        method: 'POST',
-        body: payload,
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      });
-      
-      const result = await response.json();
-      if (result.success) {
-        const ids = pending.map(p => p.id);
-        await db.measurements.where('id').anyOf(ids).modify({ syncStatus: 'synced' });
-        setSyncError('');
-      } else {
-        // Server-confirmed rejection — mark as failed
-        const ids = pending.map(p => p.id);
-        await db.measurements.where('id').anyOf(ids).modify({ syncStatus: 'failed' });
-        setSyncError(`Sync rejected: ${result.error || 'Unknown server error'}`);
+      // Chunking by 500
+      const batchSize = 500;
+      const batches = [];
+      for (let i = 0; i < pending.length; i += batchSize) {
+        batches.push(pending.slice(i, i + batchSize));
+      }
+
+      for (const batch of batches) {
+         const currentSettings = settingsRef.current;
+         const payload = {
+           action: "sync_measurements",
+           deviceId: currentSettings.deviceId,
+           deviceToken: currentSettings.deviceToken,
+           estate: currentSettings.estate,
+           operatorName: currentSettings.operatorName,
+           measurements: batch
+         };
+         
+         const response = await fetch(GAS_URL, {
+           method: 'POST',
+           body: JSON.stringify(payload),
+           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+         });
+         
+         const result = await response.json();
+         if (result.success) {
+           const syncedIds = result.syncedIds || batch.map(b => b.id);
+           if (syncedIds.length > 0) {
+             await db.measurements.where('id').anyOf(syncedIds).modify({ syncStatus: 'synced' });
+           }
+           
+           if (result.failed && result.failed.length > 0) {
+             const failedIds = result.failed.map(f => f.localId);
+             await db.measurements.where('id').anyOf(failedIds).modify({ syncStatus: 'failed' });
+           }
+           
+           setSyncError('');
+           setAuthError('');
+         } else {
+           if (result.errorType === 'auth_failed' || result.errorType === 'subscription_expired') {
+             setAuthError(result.error || 'Access approval required.');
+             // Stop further batches
+             break;
+           } else {
+             const ids = batch.map(p => p.id);
+             await db.measurements.where('id').anyOf(ids).modify({ syncStatus: 'failed' });
+             setSyncError(`Sync error: ${result.error || 'Unknown server error'}`);
+           }
+         }
       }
     } catch (error) {
-      // Transient network error — leave as pending for auto-retry
       setSyncError(`Network error: ${error.message || 'Connection lost'}. Will retry automatically.`);
     } finally {
       isSyncingRef.current = false;
       setSyncing(false);
     }
-  }, [isOnline]);
+  }, [isOnline, authError]);
 
-  // Sync when coming online
   useEffect(() => {
     if (isOnline) {
       const timeout = setTimeout(() => {
@@ -210,7 +301,6 @@ function TrackerApp() {
     }
   }, [isOnline, syncPending]);
 
-  // Periodic Sync Retry
   const pendingCountForSync = useLiveQuery(
     () => db.measurements.where('syncStatus').equals('pending').count(),
     []
@@ -226,7 +316,6 @@ function TrackerApp() {
   const saveMeasurement = useCallback(async (caliperReading) => {
     if (isNaN(caliperReading) || caliperReading <= 0) return;
     
-    // Range validation
     if (caliperReading < MIN_READING || caliperReading > MAX_READING) {
       setRangeError(`Reading ${caliperReading}" outside valid range (${MIN_READING}–${MAX_READING}"). Ignored.`);
       setTimeout(() => setRangeError(''), 3000);
@@ -234,17 +323,45 @@ function TrackerApp() {
     }
     
     const currentSettings = settingsRef.current;
-    
     const girth = calculateGirth(caliperReading);
+    const girthCm = girthToCm(girth);
+    const recommendation = getRecommendation(girthCm);
+
+    // Get current session girths for abnormal check
+    let sessionGirths = [];
+    if (currentSettings.sessionId) {
+       const sessionMeasurements = await db.measurements.where('sessionId').equals(currentSettings.sessionId).toArray();
+       sessionGirths = sessionMeasurements.map(m => parseFloat(m.girth));
+    }
     
+    const { abnormalFlag, abnormalReason } = checkAbnormal(girth, sessionGirths);
+    if (abnormalFlag) {
+       setAbnormalWarning(`Abnormal reading: ${abnormalReason}`);
+       setTimeout(() => setAbnormalWarning(''), 5000);
+    }
+
+    const loc = ENABLE_GPS_TAGGING ? getLastKnownLocation() : { latitude: null, longitude: null, accuracy: null, status: 'unavailable', googleMapLink: null };
+
     const newMeasurement = {
       estate: currentSettings.estate,
       division: currentSettings.division,
       fieldNo: currentSettings.fieldNo,
       extent: parseFloat(currentSettings.extent),
       treeNo: parseInt(currentSettings.treeNo),
+      operatorName: currentSettings.operatorName,
+      sessionId: currentSettings.sessionId,
       caliperReading,
       girth,
+      girthCm,
+      recommendationStatus: recommendation.status,
+      recommendationText: recommendation.text,
+      abnormalFlag,
+      abnormalReason,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      gpsAccuracy: loc.accuracy,
+      gpsStatus: loc.status,
+      googleMapLink: loc.googleMapLink,
       timestamp: new Date().toISOString(),
       syncStatus: 'pending'
     };
@@ -261,10 +378,10 @@ function TrackerApp() {
     
     await db.settings.put({id: 1, ...newSettings});
 
-    if (navigator.onLine) {
+    if (navigator.onLine && !authError) {
       syncPending().catch(console.error);
     }
-  }, [syncPending]);
+  }, [syncPending, authError]);
 
   useEffect(() => {
     if (!isSetupComplete) return;
@@ -274,18 +391,11 @@ function TrackerApp() {
 
       if (e.key === 'Enter' || e.key === '\r') {
         const value = parseCaliperBuffer(bufferRef.current);
-
-
-        if (value !== null) {
-          saveMeasurement(value);
-        }
-        
+        if (value !== null) saveMeasurement(value);
         bufferRef.current = '';
         setDisplayBuffer('');
-        
       } else if (/^[0-9.,]$/.test(e.key) || /^[A-Za-z\s]$/.test(e.key)) {
         bufferRef.current += e.key;
-        // Only show numeric portion in display
         setDisplayBuffer(filterDisplayBuffer(bufferRef.current));
       }
     };
@@ -296,8 +406,16 @@ function TrackerApp() {
 
   const handleSetupSubmit = async (e) => {
     e.preventDefault();
-    await db.settings.put({id: 1, ...settings});
+    const sessionId = `${settings.estate}-${settings.division}-${settings.fieldNo}-${Date.now()}`;
+    const sessionStartedAt = new Date().toISOString();
+    const newSettings = { ...settings, sessionId, sessionStartedAt };
+    setSettings(newSettings);
+    await db.settings.put({id: 1, ...newSettings});
     setIsSetupComplete(true);
+    
+    if (ENABLE_GPS_TAGGING) {
+       startBackgroundGPS();
+    }
   };
 
   const handleInstallClick = async () => {
@@ -311,31 +429,29 @@ function TrackerApp() {
   };
 
   const handleUndo = async () => {
-    // First tap: show confirmation, no DB query needed
     if (!undoConfirm) {
       setUndoConfirm(true);
       setTimeout(() => setUndoConfirm(false), 4000);
       return;
     }
 
-    // Second tap (confirmed): query and delete
     const currentSettings = settingsRef.current;
     let lastMeasurement;
-    if (currentSettings.estate && currentSettings.fieldNo) {
+    if (currentSettings.sessionId) {
       lastMeasurement = await db.measurements
-        .where('[estate+fieldNo]')
-        .equals([currentSettings.estate, currentSettings.fieldNo])
+        .where('sessionId')
+        .equals(currentSettings.sessionId)
         .last();
     } else {
       lastMeasurement = await db.measurements.orderBy('id').last();
     }
+    
     if (!lastMeasurement) {
       setUndoConfirm(false);
       return;
     }
 
     await db.measurements.delete(lastMeasurement.id);
-    // Restore to the deleted measurement's own tree number
     const newTreeNo = lastMeasurement.treeNo;
     const newSettings = { ...currentSettings, treeNo: newTreeNo };
     setSettings(newSettings);
@@ -360,16 +476,15 @@ function TrackerApp() {
     }
   };
 
-
   const handleExportCSV = async () => {
     const all = await db.measurements.toArray();
     if (all.length === 0) {
       alert("No data to export");
       return;
     }
-    const headers = "id,estate,division,fieldNo,extent,treeNo,caliperReading,girth,timestamp,syncStatus\n";
+    const headers = "id,estate,division,fieldNo,extent,treeNo,operatorName,sessionId,caliperReading,girth,girthCm,recommendationStatus,abnormalFlag,latitude,longitude,timestamp,syncStatus\n";
     const rows = all.map(m =>
-      [m.id, escCsv(m.estate), escCsv(m.division), escCsv(m.fieldNo), m.extent, m.treeNo, m.caliperReading, m.girth, escCsv(m.timestamp), m.syncStatus].join(',')
+      [m.id, escCsv(m.estate), escCsv(m.division), escCsv(m.fieldNo), m.extent, m.treeNo, escCsv(m.operatorName), escCsv(m.sessionId), m.caliperReading, m.girth, m.girthCm, escCsv(m.recommendationStatus), m.abnormalFlag, m.latitude, m.longitude, escCsv(m.timestamp), m.syncStatus].join(',')
     ).join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -388,74 +503,61 @@ function TrackerApp() {
     window.location.reload();
   };
 
-  // Filter recent measurements by current estate + field
   const recentMeasurements = useLiveQuery(
     () => {
-      if (!settings.estate || !settings.fieldNo) {
-        return db.measurements.orderBy('id').reverse().limit(5).toArray();
-      }
+      if (!settings.sessionId) return db.measurements.orderBy('id').reverse().limit(5).toArray();
       return db.measurements
-        .where('[estate+fieldNo]')
-        .equals([settings.estate, settings.fieldNo])
+        .where('sessionId')
+        .equals(settings.sessionId)
         .reverse()
         .limit(5)
         .toArray();
     },
-    [settings.estate, settings.fieldNo]
+    [settings.sessionId]
   );
   
-  // Filter pending count by current field
   const pendingCount = useLiveQuery(
     () => {
-      if (!settings.estate || !settings.fieldNo) {
-        return db.measurements.where('syncStatus').equals('pending').count();
-      }
+      if (!settings.sessionId) return db.measurements.where('syncStatus').equals('pending').count();
       return db.measurements
-        .where('[estate+fieldNo]')
-        .equals([settings.estate, settings.fieldNo])
+        .where('sessionId')
+        .equals(settings.sessionId)
         .filter(m => m.syncStatus === 'pending')
         .count();
     },
-    [settings.estate, settings.fieldNo]
+    [settings.sessionId]
   ) || 0;
 
-  // Filter synced count by current field
   const syncedCount = useLiveQuery(
     () => {
-      if (!settings.estate || !settings.fieldNo) {
-        return db.measurements.where('syncStatus').equals('synced').count();
-      }
+      if (!settings.sessionId) return db.measurements.where('syncStatus').equals('synced').count();
       return db.measurements
-        .where('[estate+fieldNo]')
-        .equals([settings.estate, settings.fieldNo])
+        .where('sessionId')
+        .equals(settings.sessionId)
         .filter(m => m.syncStatus === 'synced')
         .count();
     },
-    [settings.estate, settings.fieldNo]
+    [settings.sessionId]
   ) || 0;
 
-  // Track failed uploads for visibility
   const failedCount = useLiveQuery(
     () => {
-      if (!settings.estate || !settings.fieldNo) {
-        return db.measurements.where('syncStatus').equals('failed').count();
-      }
+      if (!settings.sessionId) return db.measurements.where('syncStatus').equals('failed').count();
       return db.measurements
-        .where('[estate+fieldNo]')
-        .equals([settings.estate, settings.fieldNo])
+        .where('sessionId')
+        .equals(settings.sessionId)
         .filter(m => m.syncStatus === 'failed')
         .count();
     },
-    [settings.estate, settings.fieldNo]
+    [settings.sessionId]
   ) || 0;
 
-  // Retry failed measurements — scoped to current field
   const retryFailed = useCallback(async () => {
     const current = settingsRef.current;
-    if (current.estate && current.fieldNo) {
+    if (current.sessionId) {
       await db.measurements
-        .where('[estate+fieldNo]')
-        .equals([current.estate, current.fieldNo])
+        .where('sessionId')
+        .equals(current.sessionId)
         .filter(m => m.syncStatus === 'failed')
         .modify({ syncStatus: 'pending' });
     } else {
@@ -465,7 +567,6 @@ function TrackerApp() {
     syncPending().catch(console.error);
   }, [syncPending]);
 
-  // Loading screen prevents flash of setup for returning users
   if (isLoading) {
     return (
       <div className="app-container">
@@ -486,6 +587,16 @@ function TrackerApp() {
           </div>
           
           <form onSubmit={handleSetupSubmit}>
+            <div className="form-group">
+              <label>Operator Name</label>
+              <input 
+                type="text" 
+                required 
+                placeholder="Enter your name"
+                value={settings.operatorName}
+                onChange={e => setSettings({...settings, operatorName: e.target.value})}
+              />
+            </div>
             <div className="form-group">
               <label>Estate</label>
               {ESTATES.length > 0 ? (
@@ -566,7 +677,7 @@ function TrackerApp() {
               <Activity size={24} color="var(--accent-primary)" /> GirthTracker
             </h1>
             <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
-              {settings.estate} | {settings.division} | F: {settings.fieldNo}
+              {settings.operatorName} | {settings.estate} | F: {settings.fieldNo}
             </div>
           </div>
           <div className="connection-status">
@@ -602,10 +713,22 @@ function TrackerApp() {
         </div>
       )}
 
+      {authError && (
+         <div className="warning-banner" style={{background: 'rgba(239, 68, 68, 0.15)', borderColor: 'var(--accent-danger)', color: 'var(--accent-danger)'}}>
+           <AlertTriangle size={16} /> {authError} Measurements are saved locally but cannot sync.
+         </div>
+      )}
+
       {rangeError && (
         <div className="warning-banner" style={{background: 'rgba(239, 68, 68, 0.15)', borderColor: 'var(--accent-danger)', color: 'var(--accent-danger)'}}>
           <AlertTriangle size={16} /> {rangeError}
         </div>
+      )}
+
+      {abnormalWarning && (
+         <div className="warning-banner" style={{background: 'rgba(245, 158, 11, 0.15)', borderColor: 'var(--accent-pending)', color: 'var(--accent-pending)'}}>
+           <AlertTriangle size={16} /> {abnormalWarning}
+         </div>
       )}
 
       {syncError && (
@@ -645,6 +768,7 @@ function TrackerApp() {
                 return;
               }
               setSetupConfirm(false);
+              stopBackgroundGPS();
               setIsSetupComplete(false);
             }}
             style={{flex: 1, fontSize: '0.9rem'}}
@@ -676,16 +800,17 @@ function TrackerApp() {
             <button type="submit" className="btn" style={{width: 'auto', padding: '0 1rem'}}>Save</button>
           </div>
         </form>
-
       </div>
 
+      <FieldInsights settings={settings} />
+
       <div className="stat-grid">
-        <div className="stat-box" onClick={syncPending} style={{cursor: isOnline ? 'pointer' : 'default'}}>
+        <div className="stat-box" onClick={syncPending} style={{cursor: isOnline && !authError ? 'pointer' : 'default'}}>
           <div className="text-muted" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.2rem'}}>
             {syncing ? <RefreshCw size={14} className="pulse" /> : <CloudUpload size={14} />} Pending
           </div>
           <div className="stat-value pending">{pendingCount}</div>
-          {pendingCount > 0 && isOnline && !syncing && <div style={{fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: '0.2rem'}}>Tap to Sync</div>}
+          {pendingCount > 0 && isOnline && !syncing && !authError && <div style={{fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: '0.2rem'}}>Tap to Sync</div>}
         </div>
         <div className="stat-box">
           <div className="text-muted">Synced</div>
@@ -705,9 +830,16 @@ function TrackerApp() {
       <div className="glass-card recent-measurements-card">
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
           <h2>Recent</h2>
-          <button className="btn btn-secondary" onClick={handleExportCSV} style={{padding: '0.4rem 0.8rem', fontSize: '0.8rem', width: 'auto'}}>
-            <FileSpreadsheet size={16} /> CSV
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {ENABLE_SESSION_REPORTS && (
+              <button className="btn btn-secondary" onClick={() => setShowSessionReport(true)} style={{padding: '0.4rem 0.8rem', fontSize: '0.8rem', width: 'auto'}}>
+                <FileText size={16} /> Report
+              </button>
+            )}
+            <button className="btn btn-secondary" onClick={handleExportCSV} style={{padding: '0.4rem 0.8rem', fontSize: '0.8rem', width: 'auto'}}>
+              <FileSpreadsheet size={16} /> CSV
+            </button>
+          </div>
         </div>
         
         {recentMeasurements && recentMeasurements.length > 0 ? (
@@ -719,7 +851,14 @@ function TrackerApp() {
                     <span className="measurement-main">Tree #{m.treeNo} - {m.girth} in</span>
                     <span className="measurement-sub">Caliper: {m.caliperReading} in | Field: {m.fieldNo}</span>
                   </div>
-                  <span className={`badge ${m.syncStatus}`}>{m.syncStatus}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.3rem' }}>
+                    <span className={`badge ${m.syncStatus}`}>{m.syncStatus}</span>
+                    {m.recommendationStatus && m.recommendationStatus !== 'not_ready' && (
+                       <span className={`badge ${m.recommendationStatus === 'tappable' ? 'synced' : 'pending'}`}>
+                          {m.recommendationStatus === 'tappable' ? 'Tappable' : 'Approaching'}
+                       </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -732,6 +871,10 @@ function TrackerApp() {
       </div>
 
       <div className="app-version">v{APP_VERSION}</div>
+
+      {showSessionReport && (
+        <SessionReport settings={settings} onClose={() => setShowSessionReport(false)} />
+      )}
     </div>
   );
 }
