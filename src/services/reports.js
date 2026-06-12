@@ -69,7 +69,7 @@ export function generateSessionReport({ estate, division, fieldNo, extent, opera
  */
 export function formatReportText(report) {
   const lines = [
-    `## ${EMOJI.report} GirthTracker Field Session Report`,
+    `${EMOJI.report} *GirthTracker Field Session Report*`,
     '',
     `Estate: ${report.estate}`,
     `Division: ${report.division}`,
@@ -81,12 +81,12 @@ export function formatReportText(report) {
     `Started: ${report.sessionStartedAt ? new Date(report.sessionStartedAt).toLocaleString() : 'N/A'}`,
     `Report: ${new Date(report.reportGeneratedAt).toLocaleString()}`,
     '',
-    `${EMOJI.measurement} Measurements`,
+    `${EMOJI.measurement} *Measurements*`,
     `Total: ${report.total}`,
     `Avg Girth: ${report.avg}" / ${report.avgCm} cm`,
     `Min: ${report.min}" | Max: ${report.max}"`,
     '',
-    `${EMOJI.tapping} Tapping Status`,
+    `${EMOJI.tapping} *Tapping Status*`,
     `Tappable: ${report.tappable}`,
     `Approaching: ${report.approaching}`,
     `Below threshold: ${report.belowThreshold}`,

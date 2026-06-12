@@ -266,7 +266,7 @@ function handleSyncMeasurements(parsed) {
     valueOrBlank_(m.treeNo),
     valueOrBlank_(m.caliperReading),
     valueOrBlank_(m.girth),
-    m.timestamp || new Date().toISOString(),
+    formatSriLankaDateTime_(m.timestamp),
     m.recommendationText || "",
     m.abnormalFlag ? "Yes" : "No",
     m.abnormalReason || "",
@@ -511,4 +511,9 @@ function resetMeasurementSheetHeaders() {
       }
     }
   }
+}
+
+function formatSriLankaDateTime_(timestamp) {
+  const date = timestamp ? new Date(timestamp) : new Date();
+  return Utilities.formatDate(date, "Asia/Colombo", "yyyy-MM-dd HH:mm:ss");
 }

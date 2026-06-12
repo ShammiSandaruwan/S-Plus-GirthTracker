@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { FileText, Share2, MessageCircle, Copy, X } from 'lucide-react';
+import { FileText, X } from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa6';
 import { db } from '../db';
-import { generateSessionReport, formatReportText, shareReport, shareViaWhatsApp } from '../services/reports';
+import { generateSessionReport, formatReportText, shareViaWhatsApp } from '../services/reports';
 
 /**
  * SessionReport component — generates and shares field session reports.
@@ -63,32 +64,9 @@ export default function SessionReport({ settings, onClose }) {
     }
   };
 
-  const handleShare = async () => {
-    if (!reportText) return;
-    const result = await shareReport(reportText);
-    if (result.method === 'clipboard' && result.success) {
-      setShareResult('copied');
-      setTimeout(() => setShareResult(''), 2000);
-    } else if (result.method === 'download') {
-      setShareResult('downloaded');
-      setTimeout(() => setShareResult(''), 2000);
-    }
-  };
-
   const handleWhatsApp = () => {
     if (!reportText) return;
     shareViaWhatsApp(reportText);
-  };
-
-  const handleCopy = async () => {
-    if (!reportText) return;
-    try {
-      await navigator.clipboard.writeText(reportText);
-      setShareResult('copied');
-      setTimeout(() => setShareResult(''), 2000);
-    } catch {
-      setShareResult('copy_failed');
-    }
   };
 
   return (
@@ -145,27 +123,10 @@ export default function SessionReport({ settings, onClose }) {
             </div>
 
             <div className="report-share-actions">
-              <button className="btn" onClick={handleShare} style={{ flex: 1 }}>
-                <Share2 size={16} /> Share
-              </button>
-              <button className="btn btn-secondary" onClick={handleWhatsApp} style={{ flex: 1 }}>
-                <MessageCircle size={16} /> WhatsApp
-              </button>
-              <button className="btn btn-secondary" onClick={handleCopy} style={{ width: 'auto', padding: '0 0.8rem' }}>
-                <Copy size={16} />
+              <button className="btn" onClick={handleWhatsApp} style={{ width: '100%' }}>
+                <FaWhatsapp size={18} /> WhatsApp
               </button>
             </div>
-
-            {shareResult === 'copied' && (
-              <p className="text-muted" style={{ textAlign: 'center', color: 'var(--accent-primary)', marginTop: '0.5rem', fontSize: '0.85rem' }}>
-                Report copied to clipboard!
-              </p>
-            )}
-            {shareResult === 'downloaded' && (
-              <p className="text-muted" style={{ textAlign: 'center', color: 'var(--accent-primary)', marginTop: '0.5rem', fontSize: '0.85rem' }}>
-                Report downloaded as text file.
-              </p>
-            )}
           </>
         )}
       </div>
