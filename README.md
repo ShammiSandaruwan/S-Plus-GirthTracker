@@ -216,10 +216,20 @@ VITE_DISABLED_MODE="false"
 | B | Division |
 | C | Field No |
 | D | Extent (Ha) |
-| E | Tree No |
+| E | Tree Number |
 | F | Caliper Reading (in) |
 | G | Girth (in) |
-| H | Timestamp (ISO 8601) |
+| H | Date |
+| I | Tapping Recommendation |
+| J | Abnormal Flag |
+| K | Abnormal Reason |
+| L | Latitude |
+| M | Longitude |
+| N | GPS Accuracy |
+| O | Google Map Link |
+
+**⚠️ Important Test Data Cleanup Note:** 
+For clean testing with the updated column order, you must use a new blank Google Sheet or completely clear any old test data in your existing mapped estate sheets. Old sheets with different headers will misalign new records.
 
 ---
 
