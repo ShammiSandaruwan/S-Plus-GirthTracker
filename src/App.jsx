@@ -677,7 +677,7 @@ function TrackerApp({ approvedData }) {
               <Activity size={24} color="var(--accent-primary)" /> GirthTracker
             </h1>
             <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
-              {settings.operatorName} | {settings.estate} | F: {settings.fieldNo}
+              {settings.estate} | F: {settings.fieldNo}
             </div>
           </div>
           <div className="connection-status">

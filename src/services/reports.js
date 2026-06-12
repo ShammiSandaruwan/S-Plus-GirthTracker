@@ -75,7 +75,6 @@ export function formatReportText(report) {
     `Division: ${report.division}`,
     `Field No: ${report.fieldNo}`,
     `Extent: ${report.extent} Ha`,
-    `Operator: ${report.operatorName}`,
     '',
     `Session: ${report.sessionId || 'N/A'}`,
     `Started: ${report.sessionStartedAt ? new Date(report.sessionStartedAt).toLocaleString() : 'N/A'}`,
