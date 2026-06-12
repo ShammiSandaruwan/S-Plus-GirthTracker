@@ -3,6 +3,22 @@
  * Generates field session reports and handles sharing/export.
  */
 
+const EMOJI = {
+  report: String.fromCodePoint(0x1F4CA),      // chart
+  measurement: String.fromCodePoint(0x1F4CF), // ruler
+  tapping: String.fromCodePoint(0x1F333),     // tree
+  warning: String.fromCodePoint(0x26A0),      // warning
+  cloud: String.fromCodePoint(0x2601),        // cloud
+  location: String.fromCodePoint(0x1F4CD),    // pin
+};
+
+function sanitizeShareText(text) {
+  return String(text || '')
+    .normalize('NFC')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '')
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
+}
+
 /**
  * Generate a session report summary object from measurements.
  */
@@ -53,8 +69,7 @@ export function generateSessionReport({ estate, division, fieldNo, extent, opera
  */
 export function formatReportText(report) {
   const lines = [
-    '📊 GirthTracker Field Session Report',
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    `## ${EMOJI.report} GirthTracker Field Session Report`,
     '',
     `Estate: ${report.estate}`,
     `Division: ${report.division}`,
@@ -66,27 +81,27 @@ export function formatReportText(report) {
     `Started: ${report.sessionStartedAt ? new Date(report.sessionStartedAt).toLocaleString() : 'N/A'}`,
     `Report: ${new Date(report.reportGeneratedAt).toLocaleString()}`,
     '',
-    '📏 Measurements',
+    `${EMOJI.measurement} Measurements`,
     `Total: ${report.total}`,
     `Avg Girth: ${report.avg}" / ${report.avgCm} cm`,
     `Min: ${report.min}" | Max: ${report.max}"`,
     '',
-    '🌴 Tapping Status',
+    `${EMOJI.tapping} Tapping Status`,
     `Tappable: ${report.tappable}`,
     `Approaching: ${report.approaching}`,
     `Below threshold: ${report.belowThreshold}`,
     '',
-    `⚠️ Abnormal: ${report.abnormalCount}`,
+    `${EMOJI.warning} Abnormal Readings: ${report.abnormalCount}`,
     '',
-    '☁️ Sync Status',
+    `${EMOJI.cloud} Sync Status`,
     `Pending: ${report.pendingSync} | Synced: ${report.synced}`,
   ];
 
   if (report.sessionLocation) {
-    lines.push('', `📍 Location: ${report.sessionLocation}`);
+    lines.push('', `${EMOJI.location} Location: ${report.sessionLocation}`);
   }
 
-  lines.push('', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  lines.push('', '---');
   return lines.join('\n');
 }
 
@@ -94,9 +109,10 @@ export function formatReportText(report) {
  * Share report using native share, WhatsApp, clipboard, or text download fallback.
  */
 export async function shareReport(reportText) {
+  const cleanText = sanitizeShareText(reportText);
   if (navigator.share) {
     try {
-      await navigator.share({ title: 'GirthTracker Session Report', text: reportText });
+      await navigator.share({ title: 'GirthTracker Session Report', text: cleanText });
       return { method: 'native', success: true };
     } catch (err) {
       if (err.name === 'AbortError') return { method: 'native', success: true, cancelled: true };
@@ -105,7 +121,7 @@ export async function shareReport(reportText) {
 
   if (navigator.clipboard) {
     try {
-      await navigator.clipboard.writeText(reportText);
+      await navigator.clipboard.writeText(cleanText);
       return { method: 'clipboard', success: true };
     } catch {
       /* fall through */
@@ -113,7 +129,7 @@ export async function shareReport(reportText) {
   }
 
   try {
-    const blob = new Blob([reportText], { type: 'text/plain' });
+    const blob = new Blob([cleanText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -130,6 +146,7 @@ export async function shareReport(reportText) {
  * Share via WhatsApp.
  */
 export function shareViaWhatsApp(reportText) {
-  const encoded = encodeURIComponent(reportText);
-  window.open(`https://wa.me/?text=${encoded}`, '_blank');
+  const cleanText = sanitizeShareText(reportText);
+  const encoded = encodeURIComponent(cleanText);
+  window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener,noreferrer');
 }

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Shield, MapPin, Loader, CheckCircle, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Shield, MapPin, Loader, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 import {
   getOrCreateDeviceId,
   getLocalAccessStatus,
@@ -34,6 +34,7 @@ export default function AccessGate({ onApproved }) {
   const [deviceId, setDeviceId] = useState('');
   const [telegramWarning, setTelegramWarning] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const checkingRef = useRef(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -45,6 +46,13 @@ export default function AccessGate({ onApproved }) {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  const captureLocation = async () => {
+    setLocationStatus('capturing');
+    const result = await captureGPS();
+    setLocation(result);
+    setLocationStatus(result.status);
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -86,13 +94,6 @@ export default function AccessGate({ onApproved }) {
     };
     init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const captureLocation = useCallback(async () => {
-    setLocationStatus('capturing');
-    const result = await captureGPS();
-    setLocation(result);
-    setLocationStatus(result.status);
-  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -147,7 +148,7 @@ export default function AccessGate({ onApproved }) {
     }
   };
 
-  const handleCheckStatus = async () => {
+  const handleCheckStatus = useCallback(async () => {
     if (!requestId || !deviceId) return;
 
     if (!isOnline) {
@@ -155,6 +156,8 @@ export default function AccessGate({ onApproved }) {
       return;
     }
 
+    if (checkingRef.current) return;
+    checkingRef.current = true;
     setChecking(true);
     setErrorMessage('');
 
@@ -191,9 +194,20 @@ export default function AccessGate({ onApproved }) {
     } catch (err) {
       setErrorMessage(err.message || 'Network error.');
     } finally {
+      checkingRef.current = false;
       setChecking(false);
     }
-  };
+  }, [requestId, deviceId, isOnline, estate, operatorName, onApproved]);
+
+  useEffect(() => {
+    if (state !== 'pending' || !isOnline || !requestId || !deviceId) return;
+
+    const interval = setInterval(() => {
+      handleCheckStatus();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [state, isOnline, requestId, deviceId, handleCheckStatus]);
 
   const handleRetry = () => {
     setState('not_requested');

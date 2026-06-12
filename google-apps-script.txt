@@ -16,6 +16,24 @@ const ESTATE_SHEET_MAP = {
 
 const WEB_APP_URL = ScriptApp.getService().getUrl();
 
+const MEASUREMENT_HEADERS = [
+  "Estate",
+  "Division",
+  "Field No",
+  "Extent (Ha)",
+  "Tree Number",
+  "Caliper Reading",
+  "Girth",
+  "Date",
+  "Tapping Recommendation",
+  "Abnormal Flag",
+  "Abnormal Reason",
+  "Latitude",
+  "Longitude",
+  "GPS Accuracy",
+  "Google Map Link"
+];
+
 function doPost(e) {
   try {
     const parsed = JSON.parse(e.postData.contents);
@@ -96,34 +114,56 @@ function handleRequestAccess(parsed) {
 
   let telegramStatus = "sent";
   if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-    const text = `*New GirthTracker Access Request*\n\n` +
-                 `*Estate:* ${estate}\n` +
-                 `*Operator:* ${operatorName}\n` +
-                 `*Location:* ${location?.googleMapLink || location?.status || 'unavailable'}\n` +
-                 `*GPS Status:* ${location?.status || 'unknown'}\n` +
-                 `*Time:* ${new Date().toISOString()}\n\n` +
-                 `Please approve or deny this device.`;
+    const safeEstate = safeTelegramText_(estate);
+    const safeOperator = safeTelegramText_(operatorName);
+    const safeGpsStatus = safeTelegramText_(location?.status || 'unknown');
 
-    const keyboard = {
-      inline_keyboard: [[
+    const text = `New GirthTracker Access Request\n\n` +
+                 `Estate: ${safeEstate}\n` +
+                 `Operator Name: ${safeOperator}\n` +
+                 `GPS Status: ${safeGpsStatus}\n` +
+                 `Requested At: ${new Date().toISOString()}\n\n` +
+                 `Approve or deny this device.`;
+
+    const inlineKeyboard = [
+      [
         { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
         { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
-      ]]
-    };
+      ]
+    ];
+
+    if (location?.googleMapLink) {
+      inlineKeyboard.push([
+        { text: "📍 Open Location", url: location.googleMapLink }
+      ]);
+    }
 
     try {
-      UrlFetchApp.fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "post",
         contentType: "application/json",
+        muteHttpExceptions: true,
         payload: JSON.stringify({
           chat_id: TELEGRAM_CHAT_ID,
           text: text,
-          parse_mode: "Markdown",
-          reply_markup: keyboard
+          reply_markup: { inline_keyboard: inlineKeyboard }
         })
       });
+
+      const responseCode = response.getResponseCode();
+      const responseBody = response.getContentText();
+      Logger.log("Telegram response code: " + responseCode);
+      Logger.log("Telegram response body: " + responseBody);
+
+      if (responseCode !== 200) {
+        telegramStatus = "failed";
+        const lastRow = sheet.getLastRow();
+        sheet.getRange(lastRow, 17).setValue(`Telegram Error: ${responseCode} - ${responseBody}`);
+      }
     } catch (e) {
       telegramStatus = "failed";
+      const lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow, 17).setValue(`Telegram Exception: ${e.toString()}`);
     }
   } else {
     telegramStatus = "failed";
@@ -211,38 +251,29 @@ function handleSyncMeasurements(parsed) {
   if (sheetId) {
     sheet = SpreadsheetApp.openById(sheetId).getSheets()[0];
   } else {
-    sheet = getOrCreateSheet("Measurements_" + estate, [
-      "Estate", "Division", "Field No", "Extent", "Tree No", "Operator Name", "Session ID",
-      "Caliper Reading", "Girth Inches", "Girth CM", "Tapping Recommendation",
-      "Abnormal Flag", "Abnormal Reason", "Latitude", "Longitude", "GPS Accuracy",
-      "Google Map Link", "Timestamp", "Device ID Hash", "Sync Batch ID"
-    ]);
+    sheet = getOrCreateSheet("Measurements_" + estate);
   }
 
+  ensureExactHeaders_(sheet, MEASUREMENT_HEADERS);
+
   const deviceIdHash = computeHash(deviceId);
-  const syncBatchId = "BATCH-" + Utilities.getUuid();
   
   const rowsToAppend = measurements.map(m => [
-    m.estate,
-    m.division,
-    m.fieldNo,
-    m.extent,
-    m.treeNo,
-    m.operatorName || operatorName,
-    m.sessionId || "",
-    m.caliperReading,
-    m.girth,
-    m.girthCm || "",
+    m.estate || estate,
+    m.division || "",
+    m.fieldNo || "",
+    valueOrBlank_(m.extent),
+    valueOrBlank_(m.treeNo),
+    valueOrBlank_(m.caliperReading),
+    valueOrBlank_(m.girth),
+    m.timestamp || new Date().toISOString(),
     m.recommendationText || "",
     m.abnormalFlag ? "Yes" : "No",
     m.abnormalReason || "",
-    m.latitude || "",
-    m.longitude || "",
-    m.gpsAccuracy || "",
-    m.googleMapLink || "",
-    m.timestamp,
-    deviceIdHash,
-    syncBatchId
+    valueOrBlank_(m.latitude),
+    valueOrBlank_(m.longitude),
+    valueOrBlank_(m.gpsAccuracy),
+    m.googleMapLink || createGoogleMapLink_(m.latitude, m.longitude)
   ]);
 
   if (rowsToAppend.length > 0) {
@@ -386,6 +417,11 @@ function getOrCreateSheet(sheetName, headers = []) {
   return sheet;
 }
 
+function ensureExactHeaders_(sheet, headers) {
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+}
+
 function getDeviceToken(deviceIdHash) {
   return CacheService.getScriptCache().get("token_" + deviceIdHash);
 }
@@ -439,6 +475,40 @@ function updateLastSeen(deviceIdHash) {
       appSheet.getRange(i + 1, headers.indexOf("lastSeenAt") + 1).setValue(new Date().toISOString());
       appSheet.getRange(i + 1, headers.indexOf("lastSyncAt") + 1).setValue(new Date().toISOString());
       break;
+    }
+  }
+}
+
+function safeTelegramText_(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, 300);
+}
+
+function valueOrBlank_(val) {
+  return (val === undefined || val === null) ? "" : val;
+}
+
+function createGoogleMapLink_(lat, lng) {
+  if (lat && lng) {
+    return `https://www.google.com/maps?q=${lat},${lng}`;
+  }
+  return "";
+}
+
+function resetMeasurementSheetHeaders() {
+  // Safe helper to reset headers on the mapped measurement sheets
+  for (const estateName in ESTATE_SHEET_MAP) {
+    const sheetId = ESTATE_SHEET_MAP[estateName];
+    if (sheetId) {
+      try {
+        const sheet = SpreadsheetApp.openById(sheetId).getSheets()[0];
+        ensureExactHeaders_(sheet, MEASUREMENT_HEADERS);
+      } catch (e) {
+        Logger.log(`Error resetting headers for ${estateName}: ${e}`);
+      }
     }
   }
 }
