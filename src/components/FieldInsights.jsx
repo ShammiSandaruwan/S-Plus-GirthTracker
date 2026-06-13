@@ -3,6 +3,7 @@ import { BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
 import { db } from '../db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { calculateFieldInsights } from '../services/analytics';
+import FieldMap from './FieldMap';
 
 /**
  * FieldInsights component — collapsible card showing session analytics.
@@ -34,29 +35,33 @@ export default function FieldInsights({ settings }) {
 
   if (!insights) {
     return (
-      <div className="glass-card field-insights-card">
-        <button className="field-insights-toggle" onClick={() => setExpanded(!expanded)}>
-          <span><BarChart3 size={16} /> Field Insights</span>
-          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </button>
-        {expanded && (
-          <p className="text-muted" style={{ textAlign: 'center', padding: '1rem 0', fontSize: '0.85rem' }}>
-            More measurements needed for field insights.
-          </p>
-        )}
-      </div>
+      <>
+        <div className="glass-card field-insights-card">
+          <button className="field-insights-toggle" onClick={() => setExpanded(!expanded)}>
+            <span><BarChart3 size={16} /> Field Insights</span>
+            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          {expanded && (
+            <p className="text-muted" style={{ textAlign: 'center', padding: '1rem 0', fontSize: '0.85rem' }}>
+              More measurements needed for field insights.
+            </p>
+          )}
+        </div>
+        <FieldMap measurements={measurements || []} />
+      </>
     );
   }
 
   return (
-    <div className="glass-card field-insights-card">
-      <button className="field-insights-toggle" onClick={() => setExpanded(!expanded)}>
-        <span><BarChart3 size={16} /> Field Insights</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span className="text-muted" style={{ fontSize: '0.8rem' }}>{insights.total} trees</span>
-          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </span>
-      </button>
+    <>
+      <div className="glass-card field-insights-card">
+        <button className="field-insights-toggle" onClick={() => setExpanded(!expanded)}>
+          <span><BarChart3 size={16} /> Field Insights</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="text-muted" style={{ fontSize: '0.8rem' }}>{insights.total} trees</span>
+            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </span>
+        </button>
 
       {expanded && (
         <div className="field-insights-body">
@@ -106,6 +111,8 @@ export default function FieldInsights({ settings }) {
           )}
         </div>
       )}
-    </div>
+      </div>
+      <FieldMap measurements={measurements} />
+    </>
   );
 }
