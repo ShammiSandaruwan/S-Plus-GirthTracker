@@ -171,6 +171,7 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 | `VITE_GAS_SECRET` | ❌ | Shared secret for securing the GAS endpoint. Must match `SHARED_SECRET` in the GAS script. |
 | `VITE_MAINTENANCE_MODE` | ❌ | Set to `"true"` to display a maintenance notice instead of the app. |
 | `VITE_DISABLED_MODE` | ❌ | Set to `"true"` to fully block access with a security notice. Takes precedence over maintenance mode. |
+| `VITE_ENABLE_FIELD_INSIGHTS` | ❌ | Controls whether the Field Insights / GPS Map feature is visible in the app. |
 
 ```env
 VITE_GAS_URL="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
@@ -178,6 +179,7 @@ VITE_ESTATES="Estate A,Estate B,Estate C"
 VITE_GAS_SECRET="a_strong_random_password"
 VITE_MAINTENANCE_MODE="false"
 VITE_DISABLED_MODE="false"
+VITE_ENABLE_FIELD_INSIGHTS="true"
 ```
 
 > **Vercel Users:** Add these variables in **Project Settings → Environment Variables** instead of using a `.env` file.
@@ -271,6 +273,8 @@ For clean testing with the updated column order, you must use a new blank Google
 2. Import the project in [Vercel](https://vercel.com/).
 3. Add your environment variables in **Project Settings → Environment Variables**.
 4. Deploy. Vercel auto-detects Vite and handles the build.
+
+> **Preview Testing Note:** Because Vercel preview runs under a separate domain, IndexedDB data from localhost or the main production domain will not appear. Users must approve access (if using auth) and create new measurements in the preview URL to test offline features and mapping.
 
 ### Manual / Self-Hosted
 
