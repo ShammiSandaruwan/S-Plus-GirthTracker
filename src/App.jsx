@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText } from 'lucide-react';
+import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3 } from 'lucide-react';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING } from './utils';
 import AccessGate from './components/AccessGate';
 import SessionReport from './components/SessionReport';
-import FieldInsights from './components/FieldInsights';
+import FieldInsightsModal from './components/FieldInsightsModal';
 import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
 import { girthToCm, getRecommendation } from './services/recommendation';
 import { checkAbnormal } from './services/analytics';
@@ -116,6 +116,7 @@ function TrackerApp({ approvedData }) {
   const [authError, setAuthError] = useState('');
   const [abnormalWarning, setAbnormalWarning] = useState('');
   const [showSessionReport, setShowSessionReport] = useState(false);
+  const [showFieldInsights, setShowFieldInsights] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -802,7 +803,7 @@ function TrackerApp({ approvedData }) {
         </form>
       </div>
 
-      <FieldInsights settings={settings} />
+
 
       <div className="stat-grid">
         <div className="stat-box" onClick={syncPending} style={{cursor: isOnline && !authError ? 'pointer' : 'default'}}>
@@ -830,14 +831,17 @@ function TrackerApp({ approvedData }) {
       <div className="glass-card recent-measurements-card">
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
           <h2>Recent</h2>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="btn btn-secondary" onClick={() => setShowFieldInsights(true)} style={{padding: '0.3rem 0.5rem', fontSize: '0.75rem', width: 'auto'}}>
+              <BarChart3 size={14} /> Insights
+            </button>
             {ENABLE_SESSION_REPORTS && (
-              <button className="btn btn-secondary" onClick={() => setShowSessionReport(true)} style={{padding: '0.4rem 0.8rem', fontSize: '0.8rem', width: 'auto'}}>
-                <FileText size={16} /> Report
+              <button className="btn btn-secondary" onClick={() => setShowSessionReport(true)} style={{padding: '0.3rem 0.5rem', fontSize: '0.75rem', width: 'auto'}}>
+                <FileText size={14} /> Report
               </button>
             )}
-            <button className="btn btn-secondary" onClick={handleExportCSV} style={{padding: '0.4rem 0.8rem', fontSize: '0.8rem', width: 'auto'}}>
-              <FileSpreadsheet size={16} /> CSV
+            <button className="btn btn-secondary" onClick={handleExportCSV} style={{padding: '0.3rem 0.5rem', fontSize: '0.75rem', width: 'auto'}}>
+              <FileSpreadsheet size={14} /> CSV
             </button>
           </div>
         </div>
@@ -875,6 +879,7 @@ function TrackerApp({ approvedData }) {
       {showSessionReport && (
         <SessionReport settings={settings} onClose={() => setShowSessionReport(false)} />
       )}
+      <FieldInsightsModal settings={settings} isOpen={showFieldInsights} onClose={() => setShowFieldInsights(false)} />
     </div>
   );
 }
