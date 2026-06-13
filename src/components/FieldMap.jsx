@@ -3,6 +3,14 @@ import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin } from 'lucide-react';
 
+function getStatus(m) {
+  return String(m.recommendationStatus || '').toLowerCase();
+}
+
+function isAbnormal(m) {
+  return m.abnormalFlag === true || m.abnormalFlag === 1 || m.abnormalFlag === 'Yes' || m.abnormalFlag === 'true';
+}
+
 export default function FieldMap({ measurements }) {
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState('all'); // all, tappable, approaching, below, abnormal
@@ -16,10 +24,10 @@ export default function FieldMap({ measurements }) {
   const filteredMeasurements = useMemo(() => {
     return gpsMeasurements.filter(m => {
       if (filter === 'all') return true;
-      if (filter === 'abnormal') return m.abnormalFlag === 1;
-      if (filter === 'tappable') return m.recommendationStatus === 'Tappable';
-      if (filter === 'approaching') return m.recommendationStatus === 'Approaching';
-      if (filter === 'below') return m.recommendationStatus === 'Below Tapping Size';
+      if (filter === 'abnormal') return isAbnormal(m);
+      if (filter === 'tappable') return getStatus(m) === 'tappable';
+      if (filter === 'approaching') return getStatus(m) === 'approaching';
+      if (filter === 'below') return getStatus(m) === 'not_ready';
       return true;
     });
   }, [gpsMeasurements, filter]);
@@ -37,11 +45,14 @@ export default function FieldMap({ measurements }) {
       <div className="glass-card field-insights-card mt-2">
         <button className="field-insights-toggle" onClick={() => setExpanded(!expanded)}>
           <span><MapPin size={16} /> Field GPS Map</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="text-muted" style={{ fontSize: '0.8rem' }}>0 GPS pts</span>
+          </span>
         </button>
         {expanded && (
           <div className="field-insights-body" style={{ textAlign: 'center', padding: '1rem' }}>
             <p className="text-muted" style={{ fontSize: '0.85rem' }}>
-              No GPS-tagged measurements available for this field/session yet.
+              No GPS-tagged measurements available for this field/session yet. Take measurements after location permission is enabled.
             </p>
           </div>
         )}
@@ -50,10 +61,10 @@ export default function FieldMap({ measurements }) {
   }
 
   const getMarkerColor = (m) => {
-    if (m.abnormalFlag === 1) return '#9c27b0'; // purple
-    if (m.recommendationStatus === 'Tappable') return '#4caf50'; // green
-    if (m.recommendationStatus === 'Approaching') return '#ff9800'; // orange
-    if (m.recommendationStatus === 'Below Tapping Size') return '#f44336'; // red
+    if (isAbnormal(m)) return '#9c27b0'; // purple
+    if (getStatus(m) === 'tappable') return '#4caf50'; // green
+    if (getStatus(m) === 'approaching') return '#ff9800'; // orange
+    if (getStatus(m) === 'not_ready') return '#f44336'; // red
     return '#2196f3'; // default blue
   };
 
@@ -118,8 +129,8 @@ export default function FieldMap({ measurements }) {
                       <strong>Tree: {m.treeNo}</strong><br/>
                       Girth: {m.girth}&quot;<br/>
                       Date: {new Date(m.timestamp).toLocaleDateString()}<br/>
-                      Status: {m.recommendationStatus}<br/>
-                      {m.abnormalFlag === 1 && <span style={{ color: '#9c27b0', fontWeight: 'bold' }}>⚠️ Abnormal Reading</span>}
+                      Status: {m.recommendationText || m.recommendationStatus || 'N/A'}<br/>
+                      {isAbnormal(m) && <span style={{ color: '#9c27b0', fontWeight: 'bold' }}>⚠️ Abnormal Reading</span>}
                     </div>
                   </Popup>
                 </CircleMarker>

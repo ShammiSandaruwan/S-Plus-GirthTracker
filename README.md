@@ -272,6 +272,8 @@ For clean testing with the updated column order, you must use a new blank Google
 3. Add your environment variables in **Project Settings → Environment Variables**.
 4. Deploy. Vercel auto-detects Vite and handles the build.
 
+> **Preview Testing Note:** Because Vercel preview runs under a separate domain, IndexedDB data from localhost or the main production domain will not appear. Users must approve access (if using auth) and create new measurements in the preview URL to test offline features and mapping.
+
 ### Manual / Self-Hosted
 
 ```bash
