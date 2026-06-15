@@ -706,13 +706,13 @@ function TrackerApp({ approvedData }) {
                 className="btn" 
                 style={{padding: '0.3rem 0.6rem', fontSize: '0.8rem', width: 'auto', marginRight: '0.5rem'}}
               >
-                <Download size={14} /> Install
+                <Download size={14} /> <span className="header-action-label">Install</span>
               </button>
             )}
             {isOnline ? (
-              <><span className="status-dot online"></span> <Wifi size={14} /> Online</>
+              <><span className="status-dot online"></span> <Wifi size={14} /> <span className="header-action-label">Online</span></>
             ) : (
-              <><span className="status-dot offline"></span> <WifiOff size={14} /> Offline</>
+              <><span className="status-dot offline"></span> <WifiOff size={14} /> <span className="header-action-label">Offline</span></>
             )}
             <button 
               onClick={forceRefresh}
@@ -720,7 +720,7 @@ function TrackerApp({ approvedData }) {
               style={{padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: 'auto', marginLeft: '0.5rem'}}
               title="Force App Update"
             >
-              <RefreshCw size={14} /> {refreshConfirm ? 'Sure?' : 'Update'}
+              <RefreshCw size={14} /> <span className="header-action-label">{refreshConfirm ? 'Sure?' : 'Update'}</span>
             </button>
           </div>
         </div>
