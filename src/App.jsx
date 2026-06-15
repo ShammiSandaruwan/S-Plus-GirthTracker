@@ -9,6 +9,7 @@ import FieldInsightsModal from './components/FieldInsightsModal';
 import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
 import { girthToCm, getRecommendation } from './services/recommendation';
 import { checkAbnormal } from './services/analytics';
+import AdminPage from './components/AdminPage';
 import './index.css';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.1.0';
@@ -36,6 +37,10 @@ const ESTATES = import.meta.env.VITE_ESTATES
 function App() {
   const [accessApproved, setAccessApproved] = useState(!REQUIRE_ACCESS_APPROVAL);
   const [approvedData, setApprovedData] = useState(null);
+
+  if (window.location.pathname === '/mod') {
+    return <AdminPage />;
+  }
 
   if (IS_DISABLED_MODE) {
     return (
