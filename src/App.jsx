@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3 } from 'lucide-react';
+import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3, X } from 'lucide-react';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING } from './utils';
@@ -12,7 +12,7 @@ import { checkAbnormal } from './services/analytics';
 import AdminPage from './components/AdminPage';
 import './index.css';
 
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.1.0';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.2.0';
 const GAS_URL = import.meta.env.VITE_GAS_URL || '';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
@@ -27,6 +27,45 @@ function shouldOpenInsightsFromUrl() {
   return params.get('gt_insights') === '1';
 }
 const ENABLE_GPS_TAGGING = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_GPS_TAGGING);
+
+let audioCtx = null;
+function playBeep(type = 'success') {
+  try {
+    if (!audioCtx) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      audioCtx = new AudioContext();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    if (type === 'success') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.1);
+    } else {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime + 0.15);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.25);
+    }
+  } catch (e) {
+    console.debug('Audio error:', e);
+  }
+}
 
 // Parse estate list from environment
 const ESTATES = import.meta.env.VITE_ESTATES
@@ -105,6 +144,7 @@ function TrackerApp({ approvedData }) {
     lastKnownLongitude: null,
     lastKnownGpsAccuracy: null,
     lastKnownGoogleMapLink: null,
+    audioConfirmationEnabled: true,
   });
   
   const settingsRef = useRef(settings);
@@ -128,6 +168,18 @@ function TrackerApp({ approvedData }) {
   const [abnormalWarning, setAbnormalWarning] = useState('');
   const [showSessionReport, setShowSessionReport] = useState(false);
   const [showFieldInsights, setShowFieldInsights] = useState(() => shouldOpenInsightsFromUrl());
+  const [showNewFieldWizard, setShowNewFieldWizard] = useState(false);
+  const [newFieldData, setNewFieldData] = useState({ division: '', fieldNo: '', extent: '', treeNo: 1 });
+
+  const openNewFieldWizard = () => {
+    setNewFieldData({
+      division: settings.division || '',
+      fieldNo: '',
+      extent: '',
+      treeNo: 1,
+    });
+    setShowNewFieldWizard(true);
+  };
 
   const closeFieldInsights = () => {
     setShowFieldInsights(false);
@@ -147,6 +199,9 @@ function TrackerApp({ approvedData }) {
       }
 
       if (stored) {
+        if (stored.audioConfirmationEnabled === undefined) {
+          stored.audioConfirmationEnabled = true;
+        }
         setSettings(stored);
         if (stored.estate && stored.division && stored.fieldNo && stored.operatorName) {
            // We keep setup incomplete if we want the user to confirm field/division every time, 
@@ -336,6 +391,7 @@ function TrackerApp({ approvedData }) {
     if (isNaN(caliperReading) || caliperReading <= 0) return;
     
     if (caliperReading < MIN_READING || caliperReading > MAX_READING) {
+      if (currentSettings.audioConfirmationEnabled) playBeep('error');
       setRangeError(`Reading ${caliperReading}" outside valid range (${MIN_READING}–${MAX_READING}"). Ignored.`);
       setTimeout(() => setRangeError(''), 3000);
       return;
@@ -388,6 +444,7 @@ function TrackerApp({ approvedData }) {
     await db.measurements.add(newMeasurement);
     
     if ('vibrate' in navigator) navigator.vibrate([100]);
+    if (currentSettings.audioConfirmationEnabled) playBeep('success');
     setSuccessFlash(true);
     setTimeout(() => setSuccessFlash(false), 300);
 
@@ -425,6 +482,17 @@ function TrackerApp({ approvedData }) {
 
   const handleSetupSubmit = async (e) => {
     e.preventDefault();
+    if (settings.audioConfirmationEnabled && !audioCtx) {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+          audioCtx = new AudioContext();
+          if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+        }
+      } catch (err) {
+        console.debug('Audio initialization blocked:', err);
+      }
+    }
     const sessionId = `${settings.estate}-${settings.division}-${settings.fieldNo}-${Date.now()}`;
     const sessionStartedAt = new Date().toISOString();
     const newSettings = { ...settings, sessionId, sessionStartedAt };
@@ -678,6 +746,21 @@ function TrackerApp({ approvedData }) {
                 onChange={e => setSettings({...settings, treeNo: e.target.value})}
               />
             </div>
+            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem', padding: '0.5rem', background: 'var(--element-bg)', borderRadius: 'var(--radius-md)' }}>
+              <label style={{ margin: 0, fontWeight: 600 }}>Sound Confirmation</label>
+              <button 
+                type="button"
+                className={`btn ${settings.audioConfirmationEnabled ? 'btn-secondary' : 'btn-danger'}`}
+                style={{ width: 'auto', padding: '0.4rem 1rem', fontSize: '0.9rem', minWidth: '80px' }}
+                onClick={() => {
+                  const newSettings = { ...settings, audioConfirmationEnabled: !settings.audioConfirmationEnabled };
+                  setSettings(newSettings);
+                  db.settings.put({ id: 1, ...newSettings });
+                }}
+              >
+                {settings.audioConfirmationEnabled ? 'On' : 'Off'}
+              </button>
+            </div>
             <button type="submit" className="btn" style={{marginTop: '1rem'}}>
               <Save size={20} /> Save & Start Measuring
             </button>
@@ -777,7 +860,14 @@ function TrackerApp({ approvedData }) {
           )}
         </div>
         
-        <div style={{display: 'flex', gap: '0.5rem', marginTop: '1.5rem'}}>
+        <div style={{display: 'flex', gap: '0.5rem', marginTop: '1.5rem', flexWrap: 'wrap'}}>
+          <button
+            className="btn btn-secondary"
+            onClick={openNewFieldWizard}
+            style={{flex: '1 1 100%', fontSize: '0.9rem'}}
+          >
+             <Plus size={16} /> Start New Field
+          </button>
           <button
             className={`btn ${setupConfirm ? 'btn-danger-solid' : 'btn-secondary'}`}
             onClick={() => {
@@ -895,6 +985,70 @@ function TrackerApp({ approvedData }) {
       </div>
 
       <div className="app-version">v{APP_VERSION}</div>
+
+      {showNewFieldWizard && (
+        <div className="session-report-overlay">
+          <div className="glass-card session-report-card start-new-field-modal">
+            <div className="session-report-header" style={{ marginBottom: '1rem', paddingBottom: '0.5rem' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)' }}>Start New Field</h2>
+              <button className="btn-icon" onClick={() => setShowNewFieldWizard(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              {pendingCount > 0 && (
+                <div className="warning-banner" style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-pending)', borderColor: 'var(--accent-pending)', marginBottom: '1rem' }}>
+                  <AlertTriangle size={16} style={{ flexShrink: 0 }} /> 
+                  <span>You have {pendingCount} unsynced measurements. They will not be lost.</span>
+                </div>
+              )}
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const sessionId = `${settings.estate}-${newFieldData.division}-${newFieldData.fieldNo}-${Date.now()}`;
+                const sessionStartedAt = new Date().toISOString();
+                const newSettings = { 
+                  ...settings, 
+                  division: newFieldData.division,
+                  fieldNo: newFieldData.fieldNo,
+                  extent: newFieldData.extent,
+                  treeNo: newFieldData.treeNo,
+                  sessionId, 
+                  sessionStartedAt 
+                };
+                setSettings(newSettings);
+                await db.settings.put({ id: 1, ...newSettings });
+                setShowNewFieldWizard(false);
+              }}>
+                <div className="form-group">
+                  <label>Division</label>
+                  <input required type="text" value={newFieldData.division} onChange={e => setNewFieldData({...newFieldData, division: e.target.value})} />
+                </div>
+                <div className="input-row new-field-grid">
+                  <div className="form-group">
+                    <label>Field No</label>
+                    <input required type="text" value={newFieldData.fieldNo} onChange={e => setNewFieldData({...newFieldData, fieldNo: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label>Extent (Ha)</label>
+                    <input required type="number" step="0.01" value={newFieldData.extent} onChange={e => setNewFieldData({...newFieldData, extent: e.target.value})} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Starting Tree Number</label>
+                  <input required type="number" min="1" value={newFieldData.treeNo} onChange={e => setNewFieldData({...newFieldData, treeNo: e.target.value})} />
+                </div>
+                
+                <div className="modal-actions" style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowNewFieldWizard(false)} style={{ flex: 1 }}>Cancel</button>
+                  <button type="submit" className="btn" style={{ flex: 1 }}><Plus size={16} /> Start</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSessionReport && (
         <SessionReport settings={settings} onClose={() => setShowSessionReport(false)} />

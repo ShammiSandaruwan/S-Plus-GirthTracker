@@ -46,6 +46,19 @@
 | 📳 **Haptic Feedback** | Vibration on successful measurement save for non-visual confirmation. |
 | ⚡ **High-Contrast Dark UI** | Premium dark-mode design optimized for outdoor readability and OLED battery savings. |
 
+
+---
+
+## 📦 Release Notes
+
+**v1.2.0 — Field Workflow Upgrade**
+- Added Sound Confirmation toggle
+- Added success beep after saved measurement
+- Added warning beep for invalid/out-of-range readings
+- Added Start New Field wizard
+- Improved Start New Field modal responsiveness on mobile
+- Preserves estate, approval, operator, and old measurements when moving to a new field
+
 ---
 
 ## 🏗️ Architecture

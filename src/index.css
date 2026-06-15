@@ -864,3 +864,43 @@ body.admin-route #root {
   overflow-y: visible;
 }
 
+/* --- Start New Field Modal --- */
+.start-new-field-modal,
+.modal-card {
+  width: min(100%, 480px);
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.modal-body {
+  max-height: calc(100dvh - 160px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.start-new-field-modal input,
+.start-new-field-modal select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 520px) {
+  .new-field-grid,
+  .modal-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  .modal-actions button {
+    width: 100%;
+  }
+}
+
+
