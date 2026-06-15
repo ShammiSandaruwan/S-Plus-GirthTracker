@@ -19,7 +19,12 @@ const IS_MAINTENANCE_MODE = isEnvFlagEnabled(import.meta.env.VITE_MAINTENANCE_MO
 const IS_DISABLED_MODE = isEnvFlagEnabled(import.meta.env.VITE_DISABLED_MODE);
 const REQUIRE_ACCESS_APPROVAL = isEnvFlagEnabled(import.meta.env.VITE_REQUIRE_ACCESS_APPROVAL);
 const ENABLE_SESSION_REPORTS = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_SESSION_REPORTS);
-const ENABLE_FIELD_INSIGHTS = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_FIELD_INSIGHTS);
+const SHOW_FIELD_INSIGHTS_BUTTON = isEnvFlagEnabled(import.meta.env.VITE_SHOW_FIELD_INSIGHTS_BUTTON);
+
+function shouldOpenInsightsFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('gt_insights') === '1';
+}
 const ENABLE_GPS_TAGGING = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_GPS_TAGGING);
 
 // Parse estate list from environment
@@ -117,7 +122,14 @@ function TrackerApp({ approvedData }) {
   const [authError, setAuthError] = useState('');
   const [abnormalWarning, setAbnormalWarning] = useState('');
   const [showSessionReport, setShowSessionReport] = useState(false);
-  const [showFieldInsights, setShowFieldInsights] = useState(false);
+  const [showFieldInsights, setShowFieldInsights] = useState(() => shouldOpenInsightsFromUrl());
+
+  const closeFieldInsights = () => {
+    setShowFieldInsights(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('gt_insights');
+    window.history.replaceState({}, '', url.toString());
+  };
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -833,7 +845,7 @@ function TrackerApp({ approvedData }) {
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
           <h2>Recent</h2>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {ENABLE_FIELD_INSIGHTS && (
+            {SHOW_FIELD_INSIGHTS_BUTTON && (
               <button className="btn btn-secondary" onClick={() => setShowFieldInsights(true)} style={{padding: '0.3rem 0.5rem', fontSize: '0.75rem', width: 'auto'}}>
                 <BarChart3 size={14} /> Insights
               </button>
@@ -882,8 +894,8 @@ function TrackerApp({ approvedData }) {
       {showSessionReport && (
         <SessionReport settings={settings} onClose={() => setShowSessionReport(false)} />
       )}
-      {ENABLE_FIELD_INSIGHTS && showFieldInsights && (
-        <FieldInsightsModal settings={settings} isOpen={showFieldInsights} onClose={() => setShowFieldInsights(false)} />
+      {showFieldInsights && (
+        <FieldInsightsModal settings={settings} isOpen={showFieldInsights} onClose={closeFieldInsights} />
       )}
     </div>
   );

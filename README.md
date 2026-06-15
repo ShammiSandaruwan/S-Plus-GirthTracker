@@ -171,7 +171,7 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 | `VITE_GAS_SECRET` | ❌ | Shared secret for securing the GAS endpoint. Must match `SHARED_SECRET` in the GAS script. |
 | `VITE_MAINTENANCE_MODE` | ❌ | Set to `"true"` to display a maintenance notice instead of the app. |
 | `VITE_DISABLED_MODE` | ❌ | Set to `"true"` to fully block access with a security notice. Takes precedence over maintenance mode. |
-| `VITE_ENABLE_FIELD_INSIGHTS` | ❌ | Controls whether the Field Insights / GPS Map feature is visible in the app. |
+| `VITE_SHOW_FIELD_INSIGHTS_BUTTON` | ❌ | Controls whether the Insights button is visible in the Recent section. Even if hidden, admin can open Field Insights using `?gt_insights=1`. |
 
 ```env
 VITE_GAS_URL="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
@@ -179,7 +179,7 @@ VITE_ESTATES="Estate A,Estate B,Estate C"
 VITE_GAS_SECRET="a_strong_random_password"
 VITE_MAINTENANCE_MODE="false"
 VITE_DISABLED_MODE="false"
-VITE_ENABLE_FIELD_INSIGHTS="true"
+VITE_SHOW_FIELD_INSIGHTS_BUTTON="false"
 ```
 
 > **Vercel Users:** Add these variables in **Project Settings → Environment Variables** instead of using a `.env` file.
