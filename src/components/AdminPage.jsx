@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,7 +13,7 @@ function isAbnormal(m) {
   return m.abnormalFlag === true || m.abnormalFlag === 1 || m.abnormalFlag === 'Yes' || m.abnormalFlag === 'true';
 }
 
-function AdminMap({ measurements, filter }) {
+function AdminMap({ measurements, filter, mapRef }) {
   const [tileError, setTileError] = useState(false);
 
   const gpsMeasurements = useMemo(() => {
@@ -56,7 +56,7 @@ function AdminMap({ measurements, filter }) {
   }
 
   return (
-    <div className="glass-card" style={{ marginTop: '1rem', overflow: 'hidden' }}>
+    <div className="glass-card admin-map-card" ref={mapRef}>
       <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)' }}>
         <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <MapIcon size={18} /> GPS Field Map ({filteredMeasurements.length} pts)
@@ -67,7 +67,7 @@ function AdminMap({ measurements, filter }) {
           Map tiles require internet connection.
         </div>
       )}
-      <div style={{ height: '500px', width: '100%', position: 'relative', zIndex: 1 }}>
+      <div className="admin-map-container">
         <MapContainer center={center} zoom={15} style={{ height: '100%', width: '100%' }}>
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -120,6 +120,17 @@ export default function AdminPage() {
   
   const [measurements, setMeasurements] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
+  const mapRef = useRef(null);
+
+  useEffect(() => {
+    document.body.classList.add('admin-route');
+    document.documentElement.classList.add('admin-route');
+
+    return () => {
+      document.body.classList.remove('admin-route');
+      document.documentElement.classList.remove('admin-route');
+    };
+  }, []);
 
   useEffect(() => {
     const fetchEstates = async () => {
@@ -226,7 +237,7 @@ export default function AdminPage() {
 
   if (!token) {
     return (
-      <div className="app-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="admin-login-page">
         <div className="glass-card" style={{ maxWidth: '400px', width: '100%', padding: '2rem', textAlign: 'center' }}>
           <Lock size={48} color="var(--accent-primary)" style={{ marginBottom: '1rem' }} />
           <h1 style={{ margin: '0 0 0.5rem 0' }}>GirthTracker Admin</h1>
@@ -270,7 +281,7 @@ export default function AdminPage() {
   const abnormal = measurements.filter(m => isAbnormal(m)).length;
 
   return (
-    <div className="app-container" style={{ maxWidth: '1000px', margin: '0 auto', padding: '1rem' }}>
+    <div className="admin-page">
       <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Database size={24} color="var(--accent-primary)" /> Admin Dashboard
@@ -327,6 +338,11 @@ export default function AdminPage() {
             {loadingData ? <RefreshCw className="pulse" size={20} /> : <Database size={20} />}
             {loadingData ? 'Loading...' : 'Load Data'}
           </button>
+          {measurements.length > 0 && (
+            <button className="btn btn-secondary" onClick={() => mapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem', marginLeft: '0.5rem' }}>
+              View Map
+            </button>
+          )}
         </div>
       </div>
 
@@ -357,7 +373,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <AdminMap measurements={measurements} filter={statusFilter} />
+      <AdminMap measurements={measurements} filter={statusFilter} mapRef={mapRef} />
     </div>
   );
 }
