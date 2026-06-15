@@ -12,7 +12,7 @@ import { checkAbnormal } from './services/analytics';
 import AdminPage from './components/AdminPage';
 import './index.css';
 
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.1.0';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.2.0';
 const GAS_URL = import.meta.env.VITE_GAS_URL || '';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
@@ -988,7 +988,7 @@ function TrackerApp({ approvedData }) {
 
       {showNewFieldWizard && (
         <div className="session-report-overlay">
-          <div className="glass-card session-report-card">
+          <div className="glass-card session-report-card start-new-field-modal">
             <div className="session-report-header" style={{ marginBottom: '1rem', paddingBottom: '0.5rem' }}>
               <h2 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)' }}>Start New Field</h2>
               <button className="btn-icon" onClick={() => setShowNewFieldWizard(false)}>
@@ -996,54 +996,56 @@ function TrackerApp({ approvedData }) {
               </button>
             </div>
             
-            {pendingCount > 0 && (
-              <div className="warning-banner" style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-pending)', borderColor: 'var(--accent-pending)', marginBottom: '1rem' }}>
-                <AlertTriangle size={16} style={{ flexShrink: 0 }} /> 
-                <span>You have {pendingCount} unsynced measurements. They will not be lost.</span>
-              </div>
-            )}
+            <div className="modal-body">
+              {pendingCount > 0 && (
+                <div className="warning-banner" style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-pending)', borderColor: 'var(--accent-pending)', marginBottom: '1rem' }}>
+                  <AlertTriangle size={16} style={{ flexShrink: 0 }} /> 
+                  <span>You have {pendingCount} unsynced measurements. They will not be lost.</span>
+                </div>
+              )}
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const sessionId = `${settings.estate}-${newFieldData.division}-${newFieldData.fieldNo}-${Date.now()}`;
-              const sessionStartedAt = new Date().toISOString();
-              const newSettings = { 
-                ...settings, 
-                division: newFieldData.division,
-                fieldNo: newFieldData.fieldNo,
-                extent: newFieldData.extent,
-                treeNo: newFieldData.treeNo,
-                sessionId, 
-                sessionStartedAt 
-              };
-              setSettings(newSettings);
-              await db.settings.put({ id: 1, ...newSettings });
-              setShowNewFieldWizard(false);
-            }}>
-              <div className="form-group">
-                <label>Division</label>
-                <input required type="text" value={newFieldData.division} onChange={e => setNewFieldData({...newFieldData, division: e.target.value})} />
-              </div>
-              <div className="input-row">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const sessionId = `${settings.estate}-${newFieldData.division}-${newFieldData.fieldNo}-${Date.now()}`;
+                const sessionStartedAt = new Date().toISOString();
+                const newSettings = { 
+                  ...settings, 
+                  division: newFieldData.division,
+                  fieldNo: newFieldData.fieldNo,
+                  extent: newFieldData.extent,
+                  treeNo: newFieldData.treeNo,
+                  sessionId, 
+                  sessionStartedAt 
+                };
+                setSettings(newSettings);
+                await db.settings.put({ id: 1, ...newSettings });
+                setShowNewFieldWizard(false);
+              }}>
                 <div className="form-group">
-                  <label>Field No</label>
-                  <input required type="text" value={newFieldData.fieldNo} onChange={e => setNewFieldData({...newFieldData, fieldNo: e.target.value})} />
+                  <label>Division</label>
+                  <input required type="text" value={newFieldData.division} onChange={e => setNewFieldData({...newFieldData, division: e.target.value})} />
+                </div>
+                <div className="input-row new-field-grid">
+                  <div className="form-group">
+                    <label>Field No</label>
+                    <input required type="text" value={newFieldData.fieldNo} onChange={e => setNewFieldData({...newFieldData, fieldNo: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label>Extent (Ha)</label>
+                    <input required type="number" step="0.01" value={newFieldData.extent} onChange={e => setNewFieldData({...newFieldData, extent: e.target.value})} />
+                  </div>
                 </div>
                 <div className="form-group">
-                  <label>Extent (Ha)</label>
-                  <input required type="number" step="0.01" value={newFieldData.extent} onChange={e => setNewFieldData({...newFieldData, extent: e.target.value})} />
+                  <label>Starting Tree Number</label>
+                  <input required type="number" min="1" value={newFieldData.treeNo} onChange={e => setNewFieldData({...newFieldData, treeNo: e.target.value})} />
                 </div>
-              </div>
-              <div className="form-group">
-                <label>Starting Tree Number</label>
-                <input required type="number" min="1" value={newFieldData.treeNo} onChange={e => setNewFieldData({...newFieldData, treeNo: e.target.value})} />
-              </div>
-              
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowNewFieldWizard(false)} style={{ flex: 1 }}>Cancel</button>
-                <button type="submit" className="btn" style={{ flex: 1 }}><Plus size={16} /> Start</button>
-              </div>
-            </form>
+                
+                <div className="modal-actions" style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowNewFieldWizard(false)} style={{ flex: 1 }}>Cancel</button>
+                  <button type="submit" className="btn" style={{ flex: 1 }}><Plus size={16} /> Start</button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
