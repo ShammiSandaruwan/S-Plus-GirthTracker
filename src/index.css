@@ -903,4 +903,57 @@ body.admin-route #root {
   }
 }
 
+/* --- Map Controls & Legend --- */
+.map-legend {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  z-index: 1000;
+  color: var(--text-primary);
+}
+
+@media (min-width: 768px) {
+  .map-legend.overlay {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    margin-bottom: 0;
+    max-width: 250px;
+    flex-direction: column;
+  }
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.map-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.map-legend-dot.tappable { background-color: #4caf50; }
+.map-legend-dot.approaching { background-color: #ff9800; }
+.map-legend-dot.below { background-color: #f44336; }
+.map-legend-dot.abnormal { background-color: #9c27b0; }
+.map-legend-dot.unknown { background-color: #2196f3; }
+
+.tree-marker-icon {
+  background: transparent;
+  border: none;
+}
+
+
 

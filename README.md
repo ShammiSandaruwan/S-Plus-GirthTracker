@@ -266,6 +266,18 @@ For clean testing with the updated column order, you must use a new blank Google
    - Provides haptic feedback (vibration)
 4. If Bluetooth isn't available, use the **Manual Entry** form.
 
+### Field GPS Map
+Field GPS Map now supports:
+
+* Auto-fit bounds
+* Marker clustering
+* Re-center control
+* GPS accuracy overlay
+* Map legend
+
+Also note:
+GPS locations are approximate and depend on device accuracy. Accuracy circles show estimated GPS confidence where available.
+
 ### Syncing Data
 - When online, the app **auto-syncs** pending measurements to Google Sheets.
 - Tap the **Pending** counter to trigger a manual sync.

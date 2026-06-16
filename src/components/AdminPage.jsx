@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle } from 'lucide-react';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
 const GAS_URL = import.meta.env.VITE_GAS_URL || '';
@@ -13,92 +12,34 @@ function isAbnormal(m) {
   return m.abnormalFlag === true || m.abnormalFlag === 1 || m.abnormalFlag === 'Yes' || m.abnormalFlag === 'true';
 }
 
+import MeasurementMap from './MeasurementMap';
+
 function AdminMap({ measurements, filter, mapRef }) {
-  const [tileError, setTileError] = useState(false);
-
-  const gpsMeasurements = useMemo(() => {
-    return measurements.filter(m => m.latitude && m.longitude && !isNaN(parseFloat(m.latitude)) && !isNaN(parseFloat(m.longitude)));
-  }, [measurements]);
-
-  const filteredMeasurements = useMemo(() => {
-    return gpsMeasurements.filter(m => {
-      if (filter === 'all') return true;
-      if (filter === 'abnormal') return isAbnormal(m);
-      if (filter === 'tappable') return getStatus(m).includes('tappable');
-      if (filter === 'approaching') return getStatus(m).includes('approaching');
-      if (filter === 'below') return getStatus(m).includes('not ready') || getStatus(m).includes('below');
-      return true;
-    });
-  }, [gpsMeasurements, filter]);
-
-  const center = useMemo(() => {
-    if (gpsMeasurements.length === 0) return [6.9271, 79.8612]; // Default to SL
-    const sumLat = gpsMeasurements.reduce((sum, m) => sum + parseFloat(m.latitude), 0);
-    const sumLng = gpsMeasurements.reduce((sum, m) => sum + parseFloat(m.longitude), 0);
-    return [sumLat / gpsMeasurements.length, sumLng / gpsMeasurements.length];
-  }, [gpsMeasurements]);
-
-  const getMarkerColor = (m) => {
-    if (isAbnormal(m)) return '#9c27b0';
-    if (getStatus(m).includes('tappable')) return '#4caf50';
-    if (getStatus(m).includes('approaching')) return '#ff9800';
-    if (getStatus(m).includes('not ready') || getStatus(m).includes('below')) return '#f44336';
-    return '#2196f3';
-  };
-
-  if (gpsMeasurements.length === 0) {
-    return (
-      <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', marginTop: '1rem' }}>
-        <MapIcon size={32} color="var(--text-muted)" style={{ marginBottom: '1rem' }} />
-        <p className="text-muted">No GPS-tagged measurements found for this selection.</p>
-      </div>
-    );
-  }
+  const [showAccuracy, setShowAccuracy] = useState(false);
 
   return (
     <div className="glass-card admin-map-card" ref={mapRef}>
-      <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)' }}>
+      <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <MapIcon size={18} /> GPS Field Map ({filteredMeasurements.length} pts)
+          <MapIcon size={18} /> GPS Field Map
         </h3>
-      </div>
-      {tileError && (
-        <div style={{ backgroundColor: 'rgba(244, 67, 54, 0.1)', padding: '0.5rem', fontSize: '0.8rem', color: '#f44336' }}>
-          Map tiles require internet connection.
-        </div>
-      )}
-      <div className="admin-map-container">
-        <MapContainer center={center} zoom={15} style={{ height: '100%', width: '100%' }}>
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; OpenStreetMap contributors'
-            eventHandlers={{ tileerror: () => setTileError(true) }}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          <input 
+            type="checkbox" 
+            checked={showAccuracy} 
+            onChange={(e) => setShowAccuracy(e.target.checked)} 
           />
-          {filteredMeasurements.map((m, i) => (
-            <CircleMarker
-              key={`${m.treeNo}-${i}`}
-              center={[parseFloat(m.latitude), parseFloat(m.longitude)]}
-              radius={6}
-              pathOptions={{
-                fillColor: getMarkerColor(m),
-                color: getMarkerColor(m),
-                weight: 1,
-                fillOpacity: 0.8
-              }}
-            >
-              <Popup>
-                <div style={{ fontSize: '0.9rem' }}>
-                  <strong>Tree: {m.treeNo}</strong><br/>
-                  Girth: {m.girth}&quot;<br/>
-                  Date: {m.date || 'Unknown'}<br/>
-                  Status: {m.recommendationText || 'N/A'}<br/>
-                  {isAbnormal(m) && <span style={{ color: '#9c27b0', fontWeight: 'bold' }}>⚠️ {m.abnormalReason || 'Abnormal Reading'}</span>}
-                  {m.googleMapLink && <><br/><a href={m.googleMapLink} target="_blank" rel="noreferrer">Open in Google Maps</a></>}
-                </div>
-              </Popup>
-            </CircleMarker>
-          ))}
-        </MapContainer>
+          Show GPS Accuracy
+        </label>
+      </div>
+      <div className="admin-map-container">
+        <MeasurementMap 
+          measurements={measurements} 
+          filter={filter} 
+          showAccuracy={showAccuracy} 
+          height="100%" 
+          adminMode={true} 
+        />
       </div>
     </div>
   );
