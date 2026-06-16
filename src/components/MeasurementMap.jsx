@@ -187,7 +187,15 @@ export default function MeasurementMap({
   ];
 
   return (
-    <div style={{ height, width: '100%', position: 'relative', borderRadius: '8px', overflow: 'hidden', zIndex: 1 }}>
+    <>
+      <div className="map-count-note">
+        <span>{filter === 'all'
+          ? `Showing ${gpsMeasurements.length} GPS points`
+          : `Showing ${filteredMeasurements.length} of ${gpsMeasurements.length} GPS points`}
+        </span>
+        <span>Cluster numbers show grouped nearby trees. Zoom in or tap a cluster to expand.</span>
+      </div>
+      <div style={{ height, width: '100%', position: 'relative', borderRadius: '8px', overflow: 'hidden', zIndex: 1 }}>
       <MapContainer 
         center={defaultCenter} 
         zoom={16} 
@@ -264,6 +272,7 @@ export default function MeasurementMap({
           ))}
         </MarkerClusterGroup>
       </MapContainer>
-    </div>
+      </div>
+    </>
   );
 }

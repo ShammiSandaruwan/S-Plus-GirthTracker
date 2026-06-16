@@ -955,5 +955,21 @@ body.admin-route #root {
   border: none;
 }
 
+/* --- Map Count & Cluster Note --- */
+.map-count-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
 
-
+@media (max-width: 520px) {
+  .map-count-note {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
