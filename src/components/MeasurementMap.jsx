@@ -117,11 +117,12 @@ function MapControls({ points }) {
         display: 'flex',
         alignItems: 'center',
         gap: '0.3rem',
-        background: 'var(--bg-primary)',
-        color: 'var(--text-primary)',
+        background: 'var(--bg-card)',
+        color: 'var(--text-main)',
         boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '6px'
+        border: '1px solid var(--glass-border)',
+        borderRadius: '6px',
+        width: 'auto'
       }}
     >
       <Target size={14} /> Re-center
