@@ -2,7 +2,7 @@
 // ----------------------------------------------------
 // REQUIRED SCRIPT PROPERTIES:
 // - TELEGRAM_BOT_TOKEN
-// - TELEGRAM_CHAT_ID
+// - TELEGRAM_CHAT_ID  (supports comma-separated list for multi-supervisor)
 // - ADMIN_APPROVAL_KEY
 
 const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
@@ -53,6 +53,10 @@ function doPost(e) {
       return handleAdminListEstates(parsed);
     } else if (action === "admin_fetch_measurements") {
       return handleAdminFetchMeasurements(parsed);
+    } else if (action === "admin_list_devices") {
+      return handleAdminListDevices(parsed);
+    } else if (action === "admin_revoke_device") {
+      return handleAdminRevokeDevice(parsed);
     }
 
     return respondJson({ success: false, error: "Unknown action" });
@@ -120,61 +124,36 @@ function handleRequestAccess(parsed) {
     ""
   ]);
 
-  let telegramStatus = "sent";
-  if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-    const safeEstate = safeTelegramText_(estate);
-    const safeOperator = safeTelegramText_(operatorName);
-    const safeGpsStatus = safeTelegramText_(location?.status || 'unknown');
+  const safeEstate = safeTelegramText_(estate);
+  const safeOperator = safeTelegramText_(operatorName);
+  const safeGpsStatus = safeTelegramText_(location?.status || 'unknown');
 
-    const text = `New GirthTracker Access Request\n\n` +
-                 `Estate: ${safeEstate}\n` +
-                 `Operator Name: ${safeOperator}\n` +
-                 `GPS Status: ${safeGpsStatus}\n` +
-                 `Requested At: ${new Date().toISOString()}\n\n` +
-                 `Approve or deny this device.`;
+  const text = `New GirthTracker Access Request\n\n` +
+               `Estate: ${safeEstate}\n` +
+               `Operator Name: ${safeOperator}\n` +
+               `GPS Status: ${safeGpsStatus}\n` +
+               `Requested At: ${new Date().toISOString()}\n\n` +
+               `Approve or deny this device.`;
 
-    const inlineKeyboard = [
-      [
-        { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
-        { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
-      ]
-    ];
+  const inlineKeyboard = [
+    [
+      { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
+      { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
+    ]
+  ];
 
-    if (location?.googleMapLink) {
-      inlineKeyboard.push([
-        { text: "📍 Open Location", url: location.googleMapLink }
-      ]);
-    }
+  if (location?.googleMapLink) {
+    inlineKeyboard.push([
+      { text: "📍 Open Location", url: location.googleMapLink }
+    ]);
+  }
 
-    try {
-      const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "post",
-        contentType: "application/json",
-        muteHttpExceptions: true,
-        payload: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          text: text,
-          reply_markup: { inline_keyboard: inlineKeyboard }
-        })
-      });
+  const telegramResult = sendTelegramNotification_(text, inlineKeyboard);
+  let telegramStatus = telegramResult.status;
 
-      const responseCode = response.getResponseCode();
-      const responseBody = response.getContentText();
-      Logger.log("Telegram response code: " + responseCode);
-      Logger.log("Telegram response body: " + responseBody);
-
-      if (responseCode !== 200) {
-        telegramStatus = "failed";
-        const lastRow = sheet.getLastRow();
-        sheet.getRange(lastRow, 17).setValue(`Telegram Error: ${responseCode} - ${responseBody}`);
-      }
-    } catch (e) {
-      telegramStatus = "failed";
-      const lastRow = sheet.getLastRow();
-      sheet.getRange(lastRow, 17).setValue(`Telegram Exception: ${e.toString()}`);
-    }
-  } else {
-    telegramStatus = "failed";
+  if (telegramStatus === "failed") {
+    const lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow, 17).setValue(telegramResult.error || "Telegram send failed.");
   }
 
   return respondJson({
@@ -487,6 +466,57 @@ function updateLastSeen(deviceIdHash) {
   }
 }
 
+/**
+ * Send a Telegram notification to all configured chat IDs.
+ * TELEGRAM_CHAT_ID supports a comma-separated list for multi-supervisor.
+ */
+function sendTelegramNotification_(text, inlineKeyboard) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    return { status: "failed", error: "Telegram not configured." };
+  }
+
+  const chatIds = String(TELEGRAM_CHAT_ID).split(',').map(s => s.trim()).filter(Boolean);
+  if (chatIds.length === 0) {
+    return { status: "failed", error: "No Telegram chat IDs configured." };
+  }
+
+  let allSucceeded = true;
+  let lastError = "";
+
+  chatIds.forEach(chatId => {
+    try {
+      const payload = {
+        chat_id: chatId,
+        text: text,
+      };
+      if (inlineKeyboard) {
+        payload.reply_markup = { inline_keyboard: inlineKeyboard };
+      }
+
+      const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "post",
+        contentType: "application/json",
+        muteHttpExceptions: true,
+        payload: JSON.stringify(payload)
+      });
+
+      const responseCode = response.getResponseCode();
+      const responseBody = response.getContentText();
+      Logger.log(`Telegram [${chatId}] response: ${responseCode}`);
+
+      if (responseCode !== 200) {
+        allSucceeded = false;
+        lastError = `Telegram Error [${chatId}]: ${responseCode} - ${responseBody}`;
+      }
+    } catch (e) {
+      allSucceeded = false;
+      lastError = `Telegram Exception [${chatId}]: ${e.toString()}`;
+    }
+  });
+
+  return { status: allSucceeded ? "sent" : "partial", error: lastError };
+}
+
 function safeTelegramText_(value) {
   return String(value || "")
     .replace(/[\u0000-\u001F\u007F]/g, " ")
@@ -649,6 +679,66 @@ function validateAdminSession_(token) {
   if (!token) return false;
   const tokenHash = computeHash(token + ADMIN_SESSION_SECRET);
   return CacheService.getScriptCache().get("admin_session_" + tokenHash) === "valid";
+}
+
+// ----------------------------------------------------
+// Device Management
+// ----------------------------------------------------
+function handleAdminListDevices(parsed) {
+  if (!validateAdminSession_(parsed.adminSessionToken)) {
+    return respondJson({ success: false, error: "Invalid or expired admin session." });
+  }
+
+  const sheet = getOrCreateSheet("ApprovedDevices");
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) {
+    return respondJson({ success: true, devices: [] });
+  }
+
+  const headers = data[0];
+  const devices = [];
+  for (let i = 1; i < data.length; i++) {
+    const obj = {};
+    headers.forEach((h, idx) => {
+      // Omit sensitive hash fields from the response
+      if (h !== "tokenHash") {
+        obj[h] = data[i][idx];
+      }
+    });
+    devices.push(obj);
+  }
+
+  return respondJson({ success: true, devices: devices });
+}
+
+function handleAdminRevokeDevice(parsed) {
+  if (!validateAdminSession_(parsed.adminSessionToken)) {
+    return respondJson({ success: false, error: "Invalid or expired admin session." });
+  }
+
+  const { deviceIdHash } = parsed;
+  if (!deviceIdHash) {
+    return respondJson({ success: false, error: "Device ID hash is required." });
+  }
+
+  const sheet = getOrCreateSheet("ApprovedDevices");
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const hashCol = headers.indexOf("deviceIdHash");
+  const revokedCol = headers.indexOf("revoked");
+
+  if (hashCol === -1 || revokedCol === -1) {
+    return respondJson({ success: false, error: "ApprovedDevices sheet is missing required columns." });
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][hashCol] === deviceIdHash) {
+      sheet.getRange(i + 1, revokedCol + 1).setValue(true);
+      return respondJson({ success: true, message: "Device revoked." });
+    }
+  }
+
+  return respondJson({ success: false, error: "Device not found." });
 }
 
 // ----------------------------------------------------

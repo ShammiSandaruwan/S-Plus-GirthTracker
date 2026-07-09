@@ -12,7 +12,7 @@ import { checkAbnormal } from './services/analytics';
 import AdminPage from './components/AdminPage';
 import './index.css';
 
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.2.0';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.0';
 const GAS_URL = import.meta.env.VITE_GAS_URL || '';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
@@ -196,6 +196,25 @@ function TrackerApp({ approvedData }) {
       if (approvedData) {
         stored = { ...stored, ...approvedData };
         await db.settings.put({ id: 1, ...stored });
+      }
+
+      // Read QR code URL params
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.toString()) {
+        const qrSettings = {};
+        if (urlParams.get('estate')) qrSettings.estate = urlParams.get('estate');
+        if (urlParams.get('division')) qrSettings.division = urlParams.get('division');
+        if (urlParams.get('field')) qrSettings.fieldNo = urlParams.get('field');
+        if (urlParams.get('extent')) qrSettings.extent = urlParams.get('extent');
+        if (urlParams.get('tree')) qrSettings.treeNo = Number(urlParams.get('tree'));
+
+        stored = { ...(stored || {}), ...qrSettings };
+        await db.settings.put({ id: 1, ...stored });
+        
+        // Optional: clear the URL bar so it doesn't stay there if they refresh later
+        const url = new URL(window.location.href);
+        ['estate', 'division', 'field', 'extent', 'tree'].forEach(param => url.searchParams.delete(param));
+        window.history.replaceState({}, '', url.toString());
       }
 
       if (stored) {

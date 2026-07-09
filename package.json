@@ -1,7 +1,7 @@
 {
   "name": "girth-tracker",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Offline-first PWA for rubber tree girth measurement with Bluetooth caliper integration and Google Sheets sync",
   "author": "S Plus Solutions (https://www.splussolutions.com)",
   "homepage": "https://www.splussolutions.com",
@@ -20,6 +20,7 @@
     "dexie-react-hooks": "^4.4.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.16.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-icons": "^5.6.0",

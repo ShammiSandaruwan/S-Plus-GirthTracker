@@ -84,16 +84,23 @@ GirthTracker replaces the **entire traditional census workflow** with a single, 
 | 📝 **Session Reports** | Generate field session summary reports with stats, tapping status, and sync status. Share via WhatsApp or native share. |
 | 📈 **Field Insights** | In-app analytics modal with girth distribution chart, tappable/approaching counts, min/max/average stats. Accessible via button or `?gt_insights=1`. |
 | 🗺️ **Field GPS Map** | Interactive Leaflet map with marker clustering, tapping-status color coding, re-center control, GPS accuracy overlay, and map legend. |
-| 🔐 **Access Approval Gate** | Device-level access control with request/approve/deny flow via Google Apps Script. Includes GPS capture, token expiration, and Telegram admin notifications. |
+| 🔐 **Access Approval Gate** | Device-level access control via Google Apps Script with GPS capture, token expiration, and **multi-supervisor Telegram notifications**. |
+| 📱 **QR Code Setup** | Admin can generate QR codes for specific fields. Workers scan them to pre-fill their entire app setup instantly. |
 | 🔄 **Start New Field Wizard** | Switch to a new division/field/extent mid-session without losing existing data or operator context. |
 | ⚡ **High-Contrast Dark UI** | Premium dark-mode design optimized for outdoor readability and OLED battery savings. |
 | 🔧 **Maintenance & Disable Modes** | Remotely toggle maintenance notices or fully disable access via environment variables. |
-| 🛠️ **Admin Dashboard** | TOTP-secured admin panel at `/mod` with estate data loading, status filters, measurement stats, and GPS field map. |
+| 🛠️ **Admin Dashboard** | TOTP-secured admin panel at `/mod` with estate data loading, status filters, measurement stats, GPS field map, and **full device management** (list/revoke devices). |
 
 
 ---
 
 ## 📦 Release Notes
+
+**v1.3.0 - Admin & Workflow Upgrades**
+- Added **QR Code Generator** in Admin Dashboard for quick field setup
+- Added **Device Management** view in Admin Dashboard to list and revoke active devices
+- Upgraded **Telegram Notifications** to support multi-supervisor approvals (comma-separated chat IDs)
+- App automatically parses URL parameters to pre-fill field setup form
 
 **v1.2.0 - Field Workflow Upgrade**
 - Added Sound Confirmation toggle
@@ -257,7 +264,7 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 | `VITE_APPROACHING_MARGIN_CM` | ❌ | Margin below the tappable threshold (cm) for "approaching" classification. Default: `5`. |
 | `VITE_MAINTENANCE_MODE` | ❌ | Set to `"true"` to display a maintenance notice instead of the app. |
 | `VITE_DISABLED_MODE` | ❌ | Set to `"true"` to fully block access with a security notice. Takes precedence over maintenance mode. |
-| `VITE_APP_VERSION` | ❌ | App version string displayed in the footer. Default: `1.2.0`. |
+| `VITE_APP_VERSION` | ❌ | App version string displayed in the footer. Default: `1.3.0`. |
 
 ```env
 VITE_GAS_URL="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
@@ -276,7 +283,7 @@ VITE_TAPPABLE_GIRTH_CM="50"
 VITE_APPROACHING_MARGIN_CM="5"
 VITE_MAINTENANCE_MODE="false"
 VITE_DISABLED_MODE="false"
-VITE_APP_VERSION="1.2.0"
+VITE_APP_VERSION="1.3.0"
 ```
 
 > **Vercel Users:** Add these variables in **Project Settings → Environment Variables** instead of using a `.env` file.
