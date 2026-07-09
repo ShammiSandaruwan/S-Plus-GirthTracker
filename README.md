@@ -26,6 +26,40 @@
 
 ---
 
+## ⚡ How It Works - End-to-End Automation
+
+GirthTracker replaces the **entire traditional census workflow** with a single, streamlined digital pipeline:
+
+```
+📏 Bluetooth Caliper ──▶ 📱 GirthTracker App ──▶ 📊 Google Sheet (Estate-wise) ──▶ 📋 Google Sheet (Summary)
+      (Field)                (Capture & Sync)           (Raw Data per Estate)              (Auto-generated)
+```
+
+### The Traditional Process (What You No Longer Need)
+
+| Step | Old Way | With GirthTracker |
+|---|---|---|
+| **1. Measurement** | Manually read caliper and write in a field book | Bluetooth caliper sends reading directly to the app - **hands-free** |
+| **2. Recording** | Copy readings from field book to a register | App auto-calculates girth, tags GPS, and stores locally - **instant** |
+| **3. Data Entry** | Re-enter register data into Excel spreadsheets | Auto-syncs to per-estate Google Sheets when online - **zero re-entry** |
+| **4. Summarization** | Manually create summary reports across estates | Google Sheets formulas and apps script generate summaries - **fully automated** |
+| **5. Backup & Access** | Physical books risk damage, loss, and limited access | Cloud-stored, accessible anywhere, real-time - **always safe** |
+
+### Why This Matters
+
+> **The only manual step is the census itself** - placing the caliper on each tree and pressing the send button. Everything downstream - recording, data entry, validation, syncing, and summarization - is handled automatically by GirthTracker and Google Sheets.
+
+**Key benefits at a glance:**
+
+- 🚫 **No field books** - Eliminate paper-based recording entirely
+- 🚫 **No manual data re-entry** - Readings flow directly from caliper to cloud
+- 🚫 **No manual summary creation** - Estate-level and cross-estate summaries are auto-generated
+- ✅ **Fewer human errors** - No transcription mistakes between book → register → spreadsheet
+- ✅ **Real-time visibility** - Management can monitor census progress as it happens
+- ✅ **Works offline** - Data is stored locally and syncs automatically when connectivity returns
+
+---
+
 ## ✨ Features
 
 | Feature | Description |
@@ -61,7 +95,7 @@
 
 ## 📦 Release Notes
 
-**v1.2.0 — Field Workflow Upgrade**
+**v1.2.0 - Field Workflow Upgrade**
 - Added Sound Confirmation toggle
 - Added success beep after saved measurement
 - Added warning beep for invalid/out-of-range readings
