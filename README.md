@@ -35,16 +35,26 @@
 | 🔢 **Auto Calculations** | Automatically computes `Girth = Caliper Reading × π` and increments the tree number. |
 | ☁️ **Background Sync** | Auto-detects connectivity and syncs pending records to Google Sheets. Periodic retry every 30 seconds. |
 | 🛡️ **Shared-Secret Auth** | Secures the Google Apps Script endpoint with a configurable shared secret. |
-| ⚠️ **Range Validation** | Rejects caliper readings outside the configurable 0.5-30 inch valid range. |
+| ⚠️ **Range Validation** | Rejects caliper readings outside the configurable 0.5–30 inch valid range. |
 | ↩️ **Undo with Confirmation** | Two-tap undo to prevent accidental deletions. Restores the tree number. |
 | ✏️ **Manual Entry Fallback** | In case Bluetooth fails, manually type a caliper reading. |
 | 📊 **CSV Export** | Export all local measurement data as a `.csv` file for offline analysis. |
 | 📱 **Installable PWA** | Install directly on Android/iOS home screen. Includes custom icons and standalone display. |
 | 🔒 **Screen Wake Lock** | Keeps the screen awake during field use via the Wake Lock API, re-acquired on visibility change. |
-| 🔧 **Maintenance & Disable Modes** | Remotely toggle maintenance notices or fully disable access via environment variables. |
 | 🏗️ **Multi-Estate Support** | Route synced data to different Google Sheets based on the estate name. |
 | 📳 **Haptic Feedback** | Vibration on successful measurement save for non-visual confirmation. |
+| 🔊 **Sound Confirmation** | Audible success beep on save and warning beep for invalid/out-of-range readings. Toggleable in setup. |
+| 📍 **GPS Tagging** | Background GPS capture at configurable intervals. Each measurement is tagged with coordinates, accuracy, and a Google Maps link. |
+| 🌴 **Tapping Recommendation** | Classifies each tree as Tappable, Approaching, or Below tapping size based on configurable girth threshold (cm). |
+| 📊 **Abnormal Reading Detection** | Z-score analysis flags statistically outlier readings within a session. Configurable sensitivity. |
+| 📝 **Session Reports** | Generate field session summary reports with stats, tapping status, and sync status. Share via WhatsApp or native share. |
+| 📈 **Field Insights** | In-app analytics modal with girth distribution chart, tappable/approaching counts, min/max/average stats. Accessible via button or `?gt_insights=1`. |
+| 🗺️ **Field GPS Map** | Interactive Leaflet map with marker clustering, tapping-status color coding, re-center control, GPS accuracy overlay, and map legend. |
+| 🔐 **Access Approval Gate** | Device-level access control with request/approve/deny flow via Google Apps Script. Includes GPS capture, token expiration, and Telegram admin notifications. |
+| 🔄 **Start New Field Wizard** | Switch to a new division/field/extent mid-session without losing existing data or operator context. |
 | ⚡ **High-Contrast Dark UI** | Premium dark-mode design optimized for outdoor readability and OLED battery savings. |
+| 🔧 **Maintenance & Disable Modes** | Remotely toggle maintenance notices or fully disable access via environment variables. |
+| 🛠️ **Admin Dashboard** | TOTP-secured admin panel at `/mod` with estate data loading, status filters, measurement stats, and GPS field map. |
 
 
 ---
@@ -120,15 +130,33 @@ S-Plus-GirthTracker/
 │   └── pwa-512x512.png        # PWA icon (512×512, maskable)
 ├── src/
 │   ├── assets/                # Static assets
+│   ├── components/
+│   │   ├── AccessGate.jsx     # Device access approval gate
+│   │   ├── AdminPage.jsx      # TOTP-secured admin dashboard
+│   │   ├── FieldInsightsModal.jsx  # Field analytics & insights
+│   │   ├── FieldMap.jsx       # Collapsible GPS field map
+│   │   ├── MeasurementMap.jsx # Leaflet map with clustering
+│   │   └── SessionReport.jsx  # Session report generator
+│   ├── services/
+│   │   ├── accessControl.js   # Device ID, access request & token mgmt
+│   │   ├── analytics.js       # Abnormal detection & field insights
+│   │   ├── location.js        # Background GPS capture & refresh
+│   │   ├── recommendation.js  # Tapping recommendation classifier
+│   │   └── reports.js         # Session report generation & sharing
 │   ├── App.jsx                # Main application component
 │   ├── db.js                  # Dexie.js database schema
 │   ├── index.css              # Global styles & design system
-│   └── main.jsx               # React entry point
+│   ├── main.jsx               # React entry point
+│   ├── utils.js               # Core measurement utilities
+│   └── utils.test.js          # Unit tests for utilities
+├── docs/                      # Documentation assets
 ├── .env.example               # Environment variable template
 ├── google-apps-script.txt     # Backend GAS code (copy to Apps Script)
 ├── index.html                 # HTML entry point
+├── vercel.json                # Vercel routing configuration
 ├── vite.config.js             # Vite + PWA configuration
 ├── eslint.config.js           # ESLint configuration
+├── LICENSE                    # Proprietary license file
 └── package.json               # Dependencies & scripts
 ```
 
@@ -182,17 +210,39 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 | `VITE_GAS_URL` | ✅ | Your deployed Google Apps Script Web App URL |
 | `VITE_ESTATES` | ❌ | Comma-separated estate names. Converts the Estate field from text input to a dropdown. |
 | `VITE_GAS_SECRET` | ❌ | Shared secret for securing the GAS endpoint. Must match `SHARED_SECRET` in the GAS script. |
+| `VITE_REQUIRE_ACCESS_APPROVAL` | ❌ | Set to `"true"` to require device-level access approval before app use. |
+| `VITE_REQUIRE_GPS_FOR_APPROVAL` | ❌ | Set to `"true"` to require GPS location capture during the access request. |
+| `VITE_ENABLE_GPS_TAGGING` | ❌ | Set to `"true"` to tag each measurement with GPS coordinates and Google Maps link. |
+| `VITE_GPS_REFRESH_INTERVAL_SECONDS` | ❌ | GPS refresh interval in seconds during a session. Default: `180`. Minimum: `30`. |
+| `VITE_ENABLE_SESSION_REPORTS` | ❌ | Set to `"true"` to enable the Session Report button for generating and sharing field reports. |
+| `VITE_SHOW_FIELD_INSIGHTS_BUTTON` | ❌ | Controls whether the Insights button is visible in the Recent section. Even if hidden, admin can open Field Insights using `?gt_insights=1`. |
+| `VITE_ENABLE_ABNORMAL_ALERTS` | ❌ | Set to `"true"` to enable z-score based abnormal reading detection alerts. |
+| `VITE_ABNORMAL_Z_SCORE` | ❌ | Z-score threshold for flagging abnormal readings. Default: `2`. |
+| `VITE_ENABLE_TAPPING_RECOMMENDATION` | ❌ | Set to `"true"` to enable tapping readiness classification for each measurement. |
+| `VITE_TAPPABLE_GIRTH_CM` | ❌ | Girth threshold (cm) at or above which a tree is classified as tappable. Default: `50`. |
+| `VITE_APPROACHING_MARGIN_CM` | ❌ | Margin below the tappable threshold (cm) for "approaching" classification. Default: `5`. |
 | `VITE_MAINTENANCE_MODE` | ❌ | Set to `"true"` to display a maintenance notice instead of the app. |
 | `VITE_DISABLED_MODE` | ❌ | Set to `"true"` to fully block access with a security notice. Takes precedence over maintenance mode. |
-| `VITE_SHOW_FIELD_INSIGHTS_BUTTON` | ❌ | Controls whether the Insights button is visible in the Recent section. Even if hidden, admin can open Field Insights using `?gt_insights=1`. |
+| `VITE_APP_VERSION` | ❌ | App version string displayed in the footer. Default: `1.2.0`. |
 
 ```env
 VITE_GAS_URL="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
 VITE_ESTATES="Estate A,Estate B,Estate C"
 VITE_GAS_SECRET="a_strong_random_password"
+VITE_REQUIRE_ACCESS_APPROVAL="true"
+VITE_REQUIRE_GPS_FOR_APPROVAL="false"
+VITE_ENABLE_GPS_TAGGING="true"
+VITE_GPS_REFRESH_INTERVAL_SECONDS="180"
+VITE_ENABLE_SESSION_REPORTS="true"
+VITE_SHOW_FIELD_INSIGHTS_BUTTON="false"
+VITE_ENABLE_ABNORMAL_ALERTS="true"
+VITE_ABNORMAL_Z_SCORE="2"
+VITE_ENABLE_TAPPING_RECOMMENDATION="true"
+VITE_TAPPABLE_GIRTH_CM="50"
+VITE_APPROACHING_MARGIN_CM="5"
 VITE_MAINTENANCE_MODE="false"
 VITE_DISABLED_MODE="false"
-VITE_SHOW_FIELD_INSIGHTS_BUTTON="false"
+VITE_APP_VERSION="1.2.0"
 ```
 
 > **Vercel Users:** Add these variables in **Project Settings → Environment Variables** instead of using a `.env` file.
