@@ -51,13 +51,12 @@ GirthTracker replaces the **entire traditional census workflow** with a single, 
 
 **Key benefits at a glance:**
 
-- 🚫 **No field books** - Eliminate paper-based recording entirely
-- 🚫 **No manual data re-entry** - Readings flow directly from caliper to cloud
-- 🚫 **No manual summary creation** - Estate-level and cross-estate summaries are auto-generated
-- ✅ **Fewer human errors** - No transcription mistakes between book → register → spreadsheet
-- ✅ **Real-time visibility** - Management can monitor census progress as it happens
-- ✅ **Works offline** - Data is stored locally and syncs automatically when connectivity returns
-
+- 💰 **Massive Clerical Time Savings** - Eliminate hundreds of hours of manual data entry and cross-checking by office staff. This is a direct cost saving that easily covers subscription costs.
+- 🚫 **No manual data re-entry** - Readings flow directly from caliper to cloud, skipping the field book and register.
+- 🚫 **No manual summary creation** - Estate-level and cross-estate summaries are auto-generated instantly.
+- ✅ **Zero transcription errors** - Completely removes human mistakes that happen when copying from book → register → spreadsheet.
+- ✅ **Real-time visibility** - Management can monitor census progress and field insights as they happen.
+- ✅ **Works fully offline** - Data is safely stored locally and syncs automatically when the worker returns to network coverage.
 ---
 
 ## ✨ Features
