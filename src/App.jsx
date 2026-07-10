@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bluetooth, Save, Settings2, Activity, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3, X } from 'lucide-react';
+import { Bluetooth, Save, Settings2, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3, X } from 'lucide-react';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING } from './utils';
@@ -689,7 +689,7 @@ function TrackerApp({ approvedData }) {
       <div className="app-container">
         <div className="glass-card">
           <div className="app-header">
-            <h1 className="app-title"><Settings2 size={24} color="var(--accent-primary)" /> Estate Setup</h1>
+            <h1 className="app-title"><img src="/logo.png" alt="GirthTracker" className="app-logo" /> Estate Setup</h1>
           </div>
           
           <form onSubmit={handleSetupSubmit}>
@@ -795,7 +795,7 @@ function TrackerApp({ approvedData }) {
         <div className="app-header" style={{marginBottom: 0, paddingBottom: 0, borderBottom: 'none'}}>
           <div style={{display: 'flex', flexDirection: 'column'}}>
             <h1 className="app-title" style={{marginBottom: '0.2rem', fontSize: '1.4rem'}}>
-              <Activity size={24} color="var(--accent-primary)" /> GirthTracker
+              <img src="/logo.png" alt="GirthTracker" className="app-logo" /> GirthTracker
             </h1>
             <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
               {settings.estate} | F: {settings.fieldNo}

@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['logo.png'],
       manifest: {
         name: 'Girth Tracker',
         short_name: 'GirthTracker',

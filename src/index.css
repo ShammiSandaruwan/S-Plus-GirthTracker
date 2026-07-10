@@ -363,6 +363,13 @@ input:focus, select:focus {
   gap: 0.5rem;
 }
 
+.app-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .connection-status {
   display: flex;
   align-items: center;

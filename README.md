@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/pwa-192x192.png" alt="GirthTracker Logo" width="96" />
+  <img src="public/logo.png" alt="GirthTracker Logo" width="96" />
 </p>
 
 <h1 align="center">🌿 GirthTracker - Rubber Tree Girth Tracker PWA</h1>
@@ -164,10 +164,10 @@ GirthTracker replaces the **entire traditional census workflow** with a single, 
 ```
 S-Plus-GirthTracker/
 ├── public/
-│   ├── favicon.svg            # App favicon
-│   ├── icons.svg              # SVG icon sprite
+│   ├── logo.png               # App logo (favicon, PWA, branding)
 │   ├── pwa-192x192.png        # PWA icon (192×192)
-│   └── pwa-512x512.png        # PWA icon (512×512, maskable)
+│   ├── pwa-512x512.png        # PWA icon (512×512, maskable)
+│   └── screenshot.png         # App screenshot
 ├── src/
 │   ├── assets/                # Static assets
 │   ├── components/
