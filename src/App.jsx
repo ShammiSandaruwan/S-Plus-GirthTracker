@@ -412,14 +412,14 @@ function TrackerApp({ approvedData }) {
   const saveMeasurement = useCallback(async (caliperReading) => {
     if (isNaN(caliperReading) || caliperReading <= 0) return;
     
+    const currentSettings = settingsRef.current;
+
     if (caliperReading < MIN_READING || caliperReading > MAX_READING) {
       if (currentSettings.audioConfirmationEnabled) playBeep('error');
       setRangeError(`Reading ${caliperReading}" outside valid range (${MIN_READING}–${MAX_READING}"). Ignored.`);
       setTimeout(() => setRangeError(''), 3000);
       return;
     }
-    
-    const currentSettings = settingsRef.current;
     const girth = calculateGirth(caliperReading);
     const girthCm = girthToCm(girth);
     const recommendation = getRecommendation(girthCm);
@@ -592,6 +592,8 @@ function TrackerApp({ approvedData }) {
               deviceId: currentSettings.deviceId,
               deviceToken: currentSettings.deviceToken,
               estate: currentSettings.estate,
+              // Unique Dexie id for exact row targeting; treeNo+timestamp kept as legacy fallback
+              measurementId: lastMeasurement.id,
               sessionId: lastMeasurement.sessionId,
               treeNo: lastMeasurement.treeNo,
               timestamp: lastMeasurement.timestamp

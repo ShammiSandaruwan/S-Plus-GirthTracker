@@ -13,7 +13,12 @@ const ADMIN_TOTP_SECRET = SCRIPT_PROPERTIES.getProperty('ADMIN_TOTP_SECRET');
 const ADMIN_SESSION_SECRET = SCRIPT_PROPERTIES.getProperty('ADMIN_SESSION_SECRET') || ADMIN_APPROVAL_KEY;
 
 const ESTATE_SHEET_MAP = {
-  "Your Estate Name": "YOUR_GOOGLE_SHEET_ID_HERE"
+  "Peenkande": "1pTiNU5iqECN5pv2XDWVUeRVMiFqRK3m3r7AD_4j3o50", 
+  "Parawatte": "1oOUeQE3sYEQ-_d67xuXSLNwNd9eeOtg5LM7JuJi5reg", 
+  "Doloswella": "1I8aOMOFiGpf6lmTZ-VcX-1J4jCrq1FQ4YGViK1Mb62w", 
+  "Kiribathgala": "12N_aWEGrrvfJ-wbmAViWp_R2nqspixg_0ztmjeWDnoE", 
+  "Niriella": "1PyRH2GD2Fv5M8gMadNhgKfrRYTJiqHzH3bmrE2xN748", 
+  "Watapotha": "15G9oeJ-KeyjYf16Q0bmjCbrsaA_7Rz7FaIUh51OleQA",
 };
 
 const WEB_APP_URL = ScriptApp.getService().getUrl();
@@ -33,7 +38,8 @@ const MEASUREMENT_HEADERS = [
   "Latitude",
   "Longitude",
   "GPS Accuracy",
-  "Google Map Link"
+  "Google Map Link",
+  "Measurement ID"
 ];
 
 function doPost(e) {
@@ -249,15 +255,23 @@ function handleSyncMeasurements(parsed) {
   
   const rowsToAppend = [];
 
-  // Server-side deduplication: build a Set of existing keys "treeNo|formattedTimestamp"
+  // Server-side deduplication: prefer Measurement ID (Dexie local id) when available,
+  // fall back to treeNo|timestamp for legacy clients that don't send m.id.
   const existingData = sheet.getDataRange().getValues();
   const existingHeaders = existingData[0];
   const treeCol = existingHeaders.indexOf("Tree Number");
   const dateCol = existingHeaders.indexOf("Date");
-  const existingKeys = new Set();
+  const midCol = existingHeaders.indexOf("Measurement ID");
+  const existingMids = new Set();
+  const existingLegacyKeys = new Set();
   for (let i = 1; i < existingData.length; i++) {
-    const key = String(existingData[i][treeCol]) + "|" + String(existingData[i][dateCol]);
-    existingKeys.add(key);
+    // Index by measurement id when present
+    if (midCol !== -1 && existingData[i][midCol]) {
+      existingMids.add(String(existingData[i][midCol]));
+    }
+    // Always build legacy key index for backward compat
+    const legacyKey = String(existingData[i][treeCol]) + "|" + String(existingData[i][dateCol]);
+    existingLegacyKeys.add(legacyKey);
   }
 
   const syncedIds = [];
@@ -265,13 +279,20 @@ function handleSyncMeasurements(parsed) {
 
   measurements.forEach(m => {
     const formattedDate = formatSriLankaDateTime_(m.timestamp);
-    const key = String(valueOrBlank_(m.treeNo)) + "|" + formattedDate;
-    if (existingKeys.has(key)) {
-      // Duplicate — skip appending but still mark as synced
+    const mid = m.id != null ? String(m.id) : "";
+
+    // Check for duplicate: prefer exact measurement id match, else legacy key
+    if (mid && existingMids.has(mid)) {
       skippedIds.push(m.id);
       return;
     }
-    existingKeys.add(key);
+    const legacyKey = String(valueOrBlank_(m.treeNo)) + "|" + formattedDate;
+    if (!mid && existingLegacyKeys.has(legacyKey)) {
+      skippedIds.push(m.id);
+      return;
+    }
+    if (mid) existingMids.add(mid);
+    existingLegacyKeys.add(legacyKey);
     syncedIds.push(m.id);
     rowsToAppend.push([
       m.estate || estate,
@@ -288,7 +309,8 @@ function handleSyncMeasurements(parsed) {
       valueOrBlank_(m.latitude),
       valueOrBlank_(m.longitude),
       valueOrBlank_(m.gpsAccuracy),
-      m.googleMapLink || createGoogleMapLink_(m.latitude, m.longitude)
+      m.googleMapLink || createGoogleMapLink_(m.latitude, m.longitude),
+      mid
     ]);
   });
 
@@ -310,7 +332,7 @@ function handleSyncMeasurements(parsed) {
 // Delete Measurement (Undo)
 // ----------------------------------------------------
 function handleDeleteMeasurement(parsed) {
-  const { deviceId, deviceToken, estate, treeNo, timestamp } = parsed;
+  const { deviceId, deviceToken, estate, measurementId, treeNo, timestamp } = parsed;
 
   const authResult = validateDevice(deviceId, deviceToken, estate);
   if (!authResult.success) {
@@ -330,14 +352,28 @@ function handleDeleteMeasurement(parsed) {
     const sheet = SpreadsheetApp.openById(sheetId).getSheets()[0];
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
+    const midCol = headers.indexOf("Measurement ID");
     const treeCol = headers.indexOf("Tree Number");
     const dateCol = headers.indexOf("Date");
-    const formattedDate = formatSriLankaDateTime_(timestamp);
 
-    for (let i = data.length - 1; i >= 1; i--) {
-      if (String(data[i][treeCol]) === String(treeNo) && String(data[i][dateCol]) === formattedDate) {
-        sheet.deleteRow(i + 1);
-        return respondJson({ success: true });
+    // Primary: delete by unique Measurement ID (exact match)
+    if (measurementId != null && midCol !== -1) {
+      for (let i = data.length - 1; i >= 1; i--) {
+        if (String(data[i][midCol]) === String(measurementId)) {
+          sheet.deleteRow(i + 1);
+          return respondJson({ success: true });
+        }
+      }
+    }
+
+    // Fallback: legacy rows without Measurement ID — match by treeNo + timestamp
+    if (treeNo != null && timestamp) {
+      const formattedDate = formatSriLankaDateTime_(timestamp);
+      for (let i = data.length - 1; i >= 1; i--) {
+        if (String(data[i][treeCol]) === String(treeNo) && String(data[i][dateCol]) === formattedDate) {
+          sheet.deleteRow(i + 1);
+          return respondJson({ success: true });
+        }
       }
     }
 
@@ -474,7 +510,15 @@ function getOrCreateSheet(sheetName, headers = []) {
   return sheet;
 }
 
+// Ensures all expected headers exist in row 1 without overwriting existing columns.
+// This safely adds new columns (e.g. "Measurement ID") to sheets that already have data.
 function ensureExactHeaders_(sheet, headers) {
+  const lastCol = sheet.getLastColumn();
+  let currentHeaders = [];
+  if (lastCol > 0) {
+    currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  }
+  // Write known headers in their expected positions
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
 }
