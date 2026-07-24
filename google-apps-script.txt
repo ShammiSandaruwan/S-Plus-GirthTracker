@@ -249,19 +249,26 @@ function handleSyncMeasurements(parsed) {
     sheet = getOrCreateSheet("Measurements_" + estate);
   }
 
-  ensureExactHeaders_(sheet, MEASUREMENT_HEADERS);
+  ensureMeasurementSheetSchema_(sheet);
 
   const deviceIdHash = computeHash(deviceId);
   
   const rowsToAppend = [];
 
-  // Server-side deduplication: prefer Measurement ID (Dexie local id) when available,
-  // fall back to treeNo|timestamp for legacy clients that don't send m.id.
+  // Server-side deduplication: exact Measurement ID match means this row was already synced.
+  // Legacy fallback to treeNo|timestamp covers migration edge cases.
   const existingData = sheet.getDataRange().getValues();
   const existingHeaders = existingData[0];
-  const treeCol = existingHeaders.indexOf("Tree Number");
-  const dateCol = existingHeaders.indexOf("Date");
-  const midCol = existingHeaders.indexOf("Measurement ID");
+  let colMap;
+  try {
+    colMap = getRequiredMeasurementColumnMap_(existingHeaders);
+  } catch (e) {
+    return respondJson({ success: false, error: e.message });
+  }
+
+  const treeCol = colMap["Tree Number"];
+  const dateCol = colMap["Date"];
+  const midCol = colMap["Measurement ID"];
   const existingMids = new Set();
   const existingLegacyKeys = new Set();
   for (let i = 1; i < existingData.length; i++) {
@@ -280,14 +287,16 @@ function handleSyncMeasurements(parsed) {
   measurements.forEach(m => {
     const formattedDate = formatSriLankaDateTime_(m.timestamp);
     const mid = m.id != null ? String(m.id) : "";
+    const legacyKey = String(valueOrBlank_(m.treeNo)) + "|" + formattedDate;
 
-    // Check for duplicate: prefer exact measurement id match, else legacy key
+    // Dedup: exact Measurement ID match means this row was already synced
     if (mid && existingMids.has(mid)) {
       skippedIds.push(m.id);
       return;
     }
-    const legacyKey = String(valueOrBlank_(m.treeNo)) + "|" + formattedDate;
-    if (!mid && existingLegacyKeys.has(legacyKey)) {
+    // Also check legacy key — covers migration edge case where the same measurement
+    // was synced before Measurement ID existed (row has matching treeNo|timestamp but no mid)
+    if (existingLegacyKeys.has(legacyKey)) {
       skippedIds.push(m.id);
       return;
     }
@@ -352,9 +361,16 @@ function handleDeleteMeasurement(parsed) {
     const sheet = SpreadsheetApp.openById(sheetId).getSheets()[0];
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
-    const midCol = headers.indexOf("Measurement ID");
-    const treeCol = headers.indexOf("Tree Number");
-    const dateCol = headers.indexOf("Date");
+    
+    let colMap;
+    try {
+      colMap = getRequiredMeasurementColumnMap_(headers);
+    } catch (e) {
+      return respondJson({ success: false, error: e.message });
+    }
+    const midCol = colMap["Measurement ID"];
+    const treeCol = colMap["Tree Number"];
+    const dateCol = colMap["Date"];
 
     // Primary: delete by unique Measurement ID (exact match)
     if (measurementId != null && midCol !== -1) {
@@ -510,17 +526,77 @@ function getOrCreateSheet(sheetName, headers = []) {
   return sheet;
 }
 
-// Ensures all expected headers exist in row 1 without overwriting existing columns.
-// This safely adds new columns (e.g. "Measurement ID") to sheets that already have data.
-function ensureExactHeaders_(sheet, headers) {
+/**
+ * Safe, idempotent schema migration for measurement sheets.
+ * - If the sheet is empty, writes the full MEASUREMENT_HEADERS row.
+ * - If the sheet already has legacy 15-column headers, appends "Measurement ID"
+ *   as column 16 without disturbing existing data rows (they get blank in col 16).
+ * - If "Measurement ID" already exists, does nothing.
+ * - Validates that known required headers are present; logs a warning if not.
+ * - Running repeatedly is safe — no duplicate columns, no data corruption.
+ */
+function ensureMeasurementSheetSchema_(sheet) {
   const lastCol = sheet.getLastColumn();
-  let currentHeaders = [];
-  if (lastCol > 0) {
-    currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  // Empty sheet — write full header row
+  if (lastCol === 0) {
+    sheet.getRange(1, 1, 1, MEASUREMENT_HEADERS.length).setValues([MEASUREMENT_HEADERS]);
+    sheet.getRange(1, 1, 1, MEASUREMENT_HEADERS.length).setFontWeight("bold");
+    return;
   }
-  // Write known headers in their expected positions
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+
+  const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  // Validate that expected core headers are present (sanity check)
+  const requiredCore = ["Estate", "Tree Number", "Date", "Girth"];
+  for (let i = 0; i < requiredCore.length; i++) {
+    if (currentHeaders.indexOf(requiredCore[i]) === -1) {
+      Logger.log("WARNING: Measurement sheet is missing expected header '" + requiredCore[i] + "'. Schema may be malformed.");
+    }
+  }
+
+  // Check if "Measurement ID" column already exists
+  if (currentHeaders.indexOf("Measurement ID") !== -1) {
+    return; // Already migrated, nothing to do
+  }
+
+  // Append the new header in the next available column (preserves existing alignment)
+  const newColIndex = lastCol + 1;
+  sheet.getRange(1, newColIndex).setValue("Measurement ID");
+  sheet.getRange(1, newColIndex).setFontWeight("bold");
+  // Existing data rows naturally have blank cells in this new column
+}
+
+/**
+ * Strict validation: confirms all required measurement columns exist in the header row.
+ * Returns a map of column names to indexes. Throws an error if any required column is missing.
+ */
+function getRequiredMeasurementColumnMap_(headers) {
+  if (!headers || headers.length === 0) {
+    throw new Error("Measurement sheet headers are empty.");
+  }
+  
+  const requiredHeaders = [
+    "Estate", "Division", "Field No", "Extent (Ha)", "Tree Number", 
+    "Caliper Reading", "Girth", "Date", "Tapping Recommendation", 
+    "Abnormal Flag", "Abnormal Reason", "Latitude", "Longitude", 
+    "GPS Accuracy", "Google Map Link"
+  ];
+  
+  const colMap = {};
+  
+  for (let i = 0; i < requiredHeaders.length; i++) {
+    const colName = requiredHeaders[i];
+    const index = headers.indexOf(colName);
+    if (index === -1) {
+      throw new Error("Measurement sheet headers are malformed: missing " + colName);
+    }
+    colMap[colName] = index;
+  }
+  
+  colMap["Measurement ID"] = headers.indexOf("Measurement ID");
+  
+  return colMap;
 }
 
 function getDeviceToken(deviceIdHash) {
@@ -651,15 +727,16 @@ function createGoogleMapLink_(lat, lng) {
 }
 
 function resetMeasurementSheetHeaders() {
-  // Safe helper to reset headers on the mapped measurement sheets
+  // Runs the safe schema migration on all mapped estate sheets.
+  // Idempotent — safe to run multiple times.
   for (const estateName in ESTATE_SHEET_MAP) {
     const sheetId = ESTATE_SHEET_MAP[estateName];
     if (sheetId) {
       try {
         const sheet = SpreadsheetApp.openById(sheetId).getSheets()[0];
-        ensureExactHeaders_(sheet, MEASUREMENT_HEADERS);
+        ensureMeasurementSheetSchema_(sheet);
       } catch (e) {
-        Logger.log(`Error resetting headers for ${estateName}: ${e}`);
+        Logger.log(`Error migrating schema for ${estateName}: ${e}`);
       }
     }
   }
@@ -731,21 +808,23 @@ function handleAdminFetchMeasurements(parsed) {
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
 
-    // Validate headers format basically
-    if (headers[0] !== "Estate" || headers[6] !== "Girth") {
-      return respondJson({ success: false, error: "Measurement sheet headers are not in the expected format." });
+    let colMap;
+    try {
+      colMap = getRequiredMeasurementColumnMap_(headers);
+    } catch (e) {
+      return respondJson({ success: false, error: e.message });
     }
 
     let measurements = [];
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      const mDateStr = String(row[headers.indexOf("Date")]);
+      const mDateStr = String(row[colMap["Date"]]);
       const mDate = new Date(mDateStr);
       
       // Division filter
-      if (division && String(row[headers.indexOf("Division")]).toLowerCase() !== division.toLowerCase()) continue;
+      if (division && String(row[colMap["Division"]]).toLowerCase() !== division.toLowerCase()) continue;
       // FieldNo filter
-      if (fieldNo && String(row[headers.indexOf("Field No")]).toLowerCase() !== fieldNo.toLowerCase()) continue;
+      if (fieldNo && String(row[colMap["Field No"]]).toLowerCase() !== fieldNo.toLowerCase()) continue;
       
       // Date filter
       if (dateFrom && mDate < new Date(dateFrom)) continue;
@@ -756,30 +835,33 @@ function handleAdminFetchMeasurements(parsed) {
       }
 
       // Status filter
-      const recStatus = String(row[headers.indexOf("Tapping Recommendation")]).toLowerCase();
-      const abnFlag = String(row[headers.indexOf("Abnormal Flag")]).toLowerCase() === 'yes';
+      const recStatus = String(row[colMap["Tapping Recommendation"]]).toLowerCase();
+      const abnFlag = String(row[colMap["Abnormal Flag"]]).toLowerCase() === 'yes';
       
       if (status === 'tappable' && !recStatus.includes('tappable')) continue;
       if (status === 'approaching' && !recStatus.includes('approaching')) continue;
       if (status === 'below' && !recStatus.includes('not ready') && !recStatus.includes('below')) continue;
       if (status === 'abnormal' && !abnFlag) continue;
 
+      const midIdx = colMap["Measurement ID"];
       measurements.push({
-        estate: row[headers.indexOf("Estate")],
-        division: row[headers.indexOf("Division")],
-        fieldNo: row[headers.indexOf("Field No")],
-        extent: row[headers.indexOf("Extent (Ha)")],
-        treeNo: row[headers.indexOf("Tree Number")],
-        caliperReading: row[headers.indexOf("Caliper Reading")],
-        girth: row[headers.indexOf("Girth")],
+        estate: row[colMap["Estate"]],
+        division: row[colMap["Division"]],
+        fieldNo: row[colMap["Field No"]],
+        extent: row[colMap["Extent (Ha)"]],
+        treeNo: row[colMap["Tree Number"]],
+        caliperReading: row[colMap["Caliper Reading"]],
+        girth: row[colMap["Girth"]],
         date: mDateStr,
-        recommendationText: row[headers.indexOf("Tapping Recommendation")],
+        recommendationText: row[colMap["Tapping Recommendation"]],
         abnormalFlag: abnFlag,
-        abnormalReason: row[headers.indexOf("Abnormal Reason")],
-        latitude: row[headers.indexOf("Latitude")],
-        longitude: row[headers.indexOf("Longitude")],
-        gpsAccuracy: row[headers.indexOf("GPS Accuracy")],
-        googleMapLink: row[headers.indexOf("Google Map Link")]
+        abnormalReason: row[colMap["Abnormal Reason"]],
+        latitude: row[colMap["Latitude"]],
+        longitude: row[colMap["Longitude"]],
+        gpsAccuracy: row[colMap["GPS Accuracy"]],
+        googleMapLink: row[colMap["Google Map Link"]],
+        // Include measurementId if column exists; blank for legacy rows
+        measurementId: midIdx !== -1 ? (row[midIdx] || "") : ""
       });
     }
 
