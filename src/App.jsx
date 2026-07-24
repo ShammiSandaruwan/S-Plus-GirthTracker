@@ -319,6 +319,9 @@ function TrackerApp({ approvedData }) {
     if (!isOnline || isSyncingRef.current || authError) return;
     if (!GAS_URL || GAS_URL.includes('YOUR_SCRIPT_ID')) return;
     
+    const currentSettings = settingsRef.current;
+    if (!currentSettings.deviceId || !currentSettings.deviceToken) return;
+
     isSyncingRef.current = true;
     setSyncing(true);
 
