@@ -57,6 +57,8 @@ function doPost(e) {
       return handleAdminListDevices(parsed);
     } else if (action === "admin_revoke_device") {
       return handleAdminRevokeDevice(parsed);
+    } else if (action === "delete_measurement") {
+      return handleDeleteMeasurement(parsed);
     }
 
     return respondJson({ success: false, error: "Unknown action" });
@@ -245,23 +247,50 @@ function handleSyncMeasurements(parsed) {
 
   const deviceIdHash = computeHash(deviceId);
   
-  const rowsToAppend = measurements.map(m => [
-    m.estate || estate,
-    m.division || "",
-    m.fieldNo || "",
-    valueOrBlank_(m.extent),
-    valueOrBlank_(m.treeNo),
-    valueOrBlank_(m.caliperReading),
-    valueOrBlank_(m.girth),
-    formatSriLankaDateTime_(m.timestamp),
-    m.recommendationText || "",
-    m.abnormalFlag ? "Yes" : "No",
-    m.abnormalReason || "",
-    valueOrBlank_(m.latitude),
-    valueOrBlank_(m.longitude),
-    valueOrBlank_(m.gpsAccuracy),
-    m.googleMapLink || createGoogleMapLink_(m.latitude, m.longitude)
-  ]);
+  const rowsToAppend = [];
+
+  // Server-side deduplication: build a Set of existing keys "treeNo|formattedTimestamp"
+  const existingData = sheet.getDataRange().getValues();
+  const existingHeaders = existingData[0];
+  const treeCol = existingHeaders.indexOf("Tree Number");
+  const dateCol = existingHeaders.indexOf("Date");
+  const existingKeys = new Set();
+  for (let i = 1; i < existingData.length; i++) {
+    const key = String(existingData[i][treeCol]) + "|" + String(existingData[i][dateCol]);
+    existingKeys.add(key);
+  }
+
+  const syncedIds = [];
+  const skippedIds = [];
+
+  measurements.forEach(m => {
+    const formattedDate = formatSriLankaDateTime_(m.timestamp);
+    const key = String(valueOrBlank_(m.treeNo)) + "|" + formattedDate;
+    if (existingKeys.has(key)) {
+      // Duplicate — skip appending but still mark as synced
+      skippedIds.push(m.id);
+      return;
+    }
+    existingKeys.add(key);
+    syncedIds.push(m.id);
+    rowsToAppend.push([
+      m.estate || estate,
+      m.division || "",
+      m.fieldNo || "",
+      valueOrBlank_(m.extent),
+      valueOrBlank_(m.treeNo),
+      valueOrBlank_(m.caliperReading),
+      valueOrBlank_(m.girth),
+      formattedDate,
+      m.recommendationText || "",
+      m.abnormalFlag ? "Yes" : "No",
+      m.abnormalReason || "",
+      valueOrBlank_(m.latitude),
+      valueOrBlank_(m.longitude),
+      valueOrBlank_(m.gpsAccuracy),
+      m.googleMapLink || createGoogleMapLink_(m.latitude, m.longitude)
+    ]);
+  });
 
   if (rowsToAppend.length > 0) {
     const startRow = sheet.getLastRow() + 1;
@@ -272,9 +301,50 @@ function handleSyncMeasurements(parsed) {
 
   return respondJson({
     success: true,
-    syncedIds: measurements.map(m => m.id),
+    syncedIds: syncedIds.concat(skippedIds),
     failed: []
   });
+}
+
+// ----------------------------------------------------
+// Delete Measurement (Undo)
+// ----------------------------------------------------
+function handleDeleteMeasurement(parsed) {
+  const { deviceId, deviceToken, estate, treeNo, timestamp } = parsed;
+
+  const authResult = validateDevice(deviceId, deviceToken, estate);
+  if (!authResult.success) {
+    return respondJson({
+      success: false,
+      errorType: authResult.errorType,
+      error: authResult.error
+    });
+  }
+
+  const sheetId = ESTATE_SHEET_MAP[estate];
+  if (!sheetId) {
+    return respondJson({ success: false, error: "Unknown estate." });
+  }
+
+  try {
+    const sheet = SpreadsheetApp.openById(sheetId).getSheets()[0];
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const treeCol = headers.indexOf("Tree Number");
+    const dateCol = headers.indexOf("Date");
+    const formattedDate = formatSriLankaDateTime_(timestamp);
+
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][treeCol]) === String(treeNo) && String(data[i][dateCol]) === formattedDate) {
+        sheet.deleteRow(i + 1);
+        return respondJson({ success: true });
+      }
+    }
+
+    return respondJson({ success: false, error: "Row not found." });
+  } catch (e) {
+    return respondJson({ success: false, error: "Error deleting row: " + e.toString() });
+  }
 }
 
 // ----------------------------------------------------

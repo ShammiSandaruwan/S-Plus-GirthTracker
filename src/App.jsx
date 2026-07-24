@@ -149,6 +149,9 @@ function TrackerApp({ approvedData }) {
   
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  const lastSaveTimeRef = useRef(0);
+  const isUndoingRef = useRef(false);
   
   const bufferRef = useRef('');
   const [displayBuffer, setDisplayBuffer] = useState('');
@@ -486,7 +489,16 @@ function TrackerApp({ approvedData }) {
 
       if (e.key === 'Enter' || e.key === '\r') {
         const value = parseCaliperBuffer(bufferRef.current);
-        if (value !== null) saveMeasurement(value);
+        if (value !== null) {
+          const now = Date.now();
+          if (now - lastSaveTimeRef.current < 800) {
+            bufferRef.current = '';
+            setDisplayBuffer('');
+            return;
+          }
+          lastSaveTimeRef.current = now;
+          saveMeasurement(value);
+        }
         bufferRef.current = '';
         setDisplayBuffer('');
       } else if (/^[0-9.,]$/.test(e.key) || /^[A-Za-z\s]$/.test(e.key)) {
@@ -541,28 +553,60 @@ function TrackerApp({ approvedData }) {
       return;
     }
 
-    const currentSettings = settingsRef.current;
-    let lastMeasurement;
-    if (currentSettings.sessionId) {
-      lastMeasurement = await db.measurements
-        .where('sessionId')
-        .equals(currentSettings.sessionId)
-        .last();
-    } else {
-      lastMeasurement = await db.measurements.orderBy('id').last();
-    }
-    
-    if (!lastMeasurement) {
-      setUndoConfirm(false);
-      return;
-    }
+    if (isUndoingRef.current) return;
+    isUndoingRef.current = true;
 
-    await db.measurements.delete(lastMeasurement.id);
-    const newTreeNo = lastMeasurement.treeNo;
-    const newSettings = { ...currentSettings, treeNo: newTreeNo };
-    setSettings(newSettings);
-    await db.settings.put({id: 1, ...newSettings});
-    setUndoConfirm(false);
+    try {
+      const currentSettings = settingsRef.current;
+      let lastMeasurement;
+      if (currentSettings.sessionId) {
+        lastMeasurement = await db.measurements
+          .where('sessionId')
+          .equals(currentSettings.sessionId)
+          .last();
+      } else {
+        lastMeasurement = await db.measurements.orderBy('id').last();
+      }
+
+      if (!lastMeasurement) {
+        setUndoConfirm(false);
+        return;
+      }
+
+      const newTreeNo = lastMeasurement.treeNo;
+      const newSettings = { ...currentSettings, treeNo: newTreeNo };
+      // Update ref immediately — before any await — so rapid successive undos read the updated value
+      settingsRef.current = newSettings;
+      setSettings(newSettings);
+
+      await db.measurements.delete(lastMeasurement.id);
+      await db.settings.put({ id: 1, ...newSettings });
+
+      // Bug 1: If synced, also delete from Google Sheets
+      if (lastMeasurement.syncStatus === 'synced' && GAS_URL && !GAS_URL.includes('YOUR_SCRIPT_ID')) {
+        try {
+          await fetch(GAS_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'delete_measurement',
+              deviceId: currentSettings.deviceId,
+              deviceToken: currentSettings.deviceToken,
+              estate: currentSettings.estate,
+              sessionId: lastMeasurement.sessionId,
+              treeNo: lastMeasurement.treeNo,
+              timestamp: lastMeasurement.timestamp
+            }),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          });
+        } catch {
+          // Best-effort: local undo succeeds even if remote delete fails
+        }
+      }
+
+      setUndoConfirm(false);
+    } finally {
+      setTimeout(() => { isUndoingRef.current = false; }, 500);
+    }
   };
 
   const adjustTreeNo = async (delta) => {
