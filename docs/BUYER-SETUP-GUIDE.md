@@ -264,6 +264,26 @@ Check:
 - Manifest icons exist in `public/`.
 - Browser supports PWA installation.
 
+#### Install button not appearing (Vivo, Samsung Internet, or other browsers)
+
+Some mobile browsers (e.g., Vivo's Funtouch OS default browser, Samsung Internet, some WebView-based browsers) do not fire the `beforeinstallprompt` event. In these cases, the native install button will not appear.
+
+**What happens instead:** The app shows a **fallback install banner** with platform-specific instructions:
+
+| Platform | Guidance |
+|---|---|
+| **Android (non-Chrome)** | "For the best experience, open this page in Chrome. Or tap ⋮ Menu → Add to Home Screen." |
+| **iOS Safari** | "Tap the Share button → Add to Home Screen." |
+| **Android Chrome** | "Tap ⋮ Menu → Install app or Add to Home Screen." |
+| **Desktop** | "Use Chrome or Edge for the best install experience." |
+
+This banner is **dismissible** (users can tap "Got it") and the dismissal is saved to `localStorage` so it won't reappear.
+
+**Recommended approach for field workers using Vivo phones:**
+1. Install **Google Chrome** from the Play Store.
+2. Open the GirthTracker URL in Chrome.
+3. The native install prompt should appear automatically.
+
 ### Old version still appears after update
 
 Use the app's update/reload control or clear site data from the browser settings.

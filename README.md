@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/version-1.3.1-blue?logo=semver&logoColor=white" alt="v1.3.1" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React 19" />
   <img src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" alt="Vite 8" />
   <img src="https://img.shields.io/badge/PWA-Offline--First-5A0FC8?logo=pwa&logoColor=white" alt="PWA" />
@@ -72,7 +73,7 @@ GirthTracker replaces the **entire traditional census workflow** with a single, 
 | ↩️ **Undo with Confirmation** | Two-tap undo to prevent accidental deletions. Restores the tree number. |
 | ✏️ **Manual Entry Fallback** | In case Bluetooth fails, manually type a caliper reading. |
 | 📊 **CSV Export** | Export all local measurement data as a `.csv` file for offline analysis. |
-| 📱 **Installable PWA** | Install directly on Android/iOS home screen. Includes custom icons and standalone display. |
+| 📱 **Installable PWA** | Install directly on Android/iOS home screen. Includes custom icons, standalone display, and **fallback guidance for browsers that don't support native install prompts** (e.g., Vivo Browser, Samsung Internet). |
 | 🔒 **Screen Wake Lock** | Keeps the screen awake during field use via the Wake Lock API, re-acquired on visibility change. |
 | 🏗️ **Multi-Estate Support** | Route synced data to different Google Sheets based on the estate name. |
 | 📳 **Haptic Feedback** | Vibration on successful measurement save for non-visual confirmation. |
@@ -94,6 +95,16 @@ GirthTracker replaces the **entire traditional census workflow** with a single, 
 ---
 
 ## 📦 Release Notes
+
+**v1.3.1 - PWA Install Compatibility Fix**
+- **Fixed**: Install button not appearing on Vivo default browser and other browsers that don't fire `beforeinstallprompt`
+- **Added**: Fallback install banner with platform-specific guidance (iOS Safari, Android non-Chrome, desktop)
+- **Added**: `appinstalled` event tracking — hides install UI after app is installed
+- **Added**: Standalone mode detection — hides install UI when app is already running as installed PWA
+- **Added**: Dismissible banner that persists to `localStorage` (won't reappear after dismissed)
+- **Fixed**: PWA manifest icon `purpose: "any maskable"` split into separate `any` and `maskable` entries (avoids Lighthouse warnings and rendering issues)
+- **Added**: `id` field to PWA manifest for stable identity across updates
+- **Added**: `screenshots` field to PWA manifest for richer install UI on supported devices
 
 **v1.3.0 - Admin & Workflow Upgrades**
 - Added **QR Code Generator** in Admin Dashboard for quick field setup
@@ -263,7 +274,7 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 | `VITE_APPROACHING_MARGIN_CM` | ❌ | Margin below the tappable threshold (cm) for "approaching" classification. Default: `5`. |
 | `VITE_MAINTENANCE_MODE` | ❌ | Set to `"true"` to display a maintenance notice instead of the app. |
 | `VITE_DISABLED_MODE` | ❌ | Set to `"true"` to fully block access with a security notice. Takes precedence over maintenance mode. |
-| `VITE_APP_VERSION` | ❌ | App version string displayed in the footer. Default: `1.3.0`. |
+| `VITE_APP_VERSION` | ❌ | App version string displayed in the footer. Default: `1.3.1`. |
 
 ```env
 VITE_GAS_URL="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
@@ -282,7 +293,7 @@ VITE_TAPPABLE_GIRTH_CM="50"
 VITE_APPROACHING_MARGIN_CM="5"
 VITE_MAINTENANCE_MODE="false"
 VITE_DISABLED_MODE="false"
-VITE_APP_VERSION="1.3.0"
+VITE_APP_VERSION="1.3.1"
 ```
 
 > **Vercel Users:** Add these variables in **Project Settings → Environment Variables** instead of using a `.env` file.

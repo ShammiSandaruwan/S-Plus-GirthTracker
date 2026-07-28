@@ -12,7 +12,7 @@ import { checkAbnormal } from './services/analytics';
 import AdminPage from './components/AdminPage';
 import './index.css';
 
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.0';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.1';
 const GAS_URL = import.meta.env.VITE_GAS_URL || '';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
@@ -161,6 +161,14 @@ function TrackerApp({ approvedData }) {
   const [syncing, setSyncing] = useState(false);
   const isSyncingRef = useRef(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
+  const [isStandalone] = useState(
+    () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+  );
+  const [showFallbackInstall, setShowFallbackInstall] = useState(false);
+  const [fallbackDismissed, setFallbackDismissed] = useState(
+    () => localStorage.getItem('gt_install_banner_dismissed') === '1'
+  );
   const [successFlash, setSuccessFlash] = useState(false);
   const [undoConfirm, setUndoConfirm] = useState(false);
   const [refreshConfirm, setRefreshConfirm] = useState(false);
@@ -254,17 +262,40 @@ function TrackerApp({ approvedData }) {
   }, []);
 
   useEffect(() => {
+    // Already running as installed PWA — skip all install logic
+    if (isStandalone) return;
+
+    let promptFired = false;
+
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
+      promptFired = true;
       setDeferredPrompt(e);
+      setShowFallbackInstall(false);
+    };
+
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setIsAppInstalled(true);
+      setShowFallbackInstall(false);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // If beforeinstallprompt hasn't fired after 3s, show fallback banner
+    const fallbackTimer = setTimeout(() => {
+      if (!promptFired && !isAppInstalled) {
+        setShowFallbackInstall(true);
+      }
+    }, 3000);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      clearTimeout(fallbackTimer);
     };
-  }, []);
+  }, [isStandalone, isAppInstalled]);
 
   // Screen wake lock
   useEffect(() => {
@@ -547,6 +578,25 @@ function TrackerApp({ approvedData }) {
         setDeferredPrompt(null);
       }
     }
+  };
+
+  const dismissFallbackBanner = () => {
+    setFallbackDismissed(true);
+    localStorage.setItem('gt_install_banner_dismissed', '1');
+  };
+
+  const getPlatformInstallHint = () => {
+    const ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) {
+      return { platform: 'ios', message: 'Tap the Share button (□↑) then "Add to Home Screen" to install this app.' };
+    }
+    if (/Android/i.test(ua)) {
+      if (/Chrome/i.test(ua) && !/EdgA/i.test(ua)) {
+        return { platform: 'android-chrome', message: 'Tap ⋮ Menu → "Install app" or "Add to Home Screen".' };
+      }
+      return { platform: 'android-other', message: 'For the best experience, open this page in Chrome. Or tap ⋮ Menu → "Add to Home Screen".' };
+    }
+    return { platform: 'desktop', message: 'Use Chrome or Edge for the best install experience.' };
   };
 
   const handleUndo = async () => {
@@ -851,7 +901,7 @@ function TrackerApp({ approvedData }) {
             </div>
           </div>
           <div className="connection-status">
-            {deferredPrompt && (
+            {deferredPrompt && !isStandalone && !isAppInstalled && (
               <button 
                 onClick={handleInstallClick} 
                 className="btn" 
@@ -876,6 +926,23 @@ function TrackerApp({ approvedData }) {
           </div>
         </div>
       </div>
+
+      {showFallbackInstall && !deferredPrompt && !isStandalone && !isAppInstalled && !fallbackDismissed && (
+        <div className="pwa-fallback-banner">
+          <div className="pwa-fallback-content">
+            <div className="pwa-fallback-icon">
+              <Download size={18} />
+            </div>
+            <div className="pwa-fallback-text">
+              <strong>Install GirthTracker</strong>
+              <span>{getPlatformInstallHint().message}</span>
+            </div>
+          </div>
+          <button className="pwa-fallback-dismiss" onClick={dismissFallbackBanner} aria-label="Dismiss">
+            Got it
+          </button>
+        </div>
+      )}
 
       {(!GAS_URL || GAS_URL.includes('YOUR_SCRIPT_ID')) && (
         <div className="warning-banner">

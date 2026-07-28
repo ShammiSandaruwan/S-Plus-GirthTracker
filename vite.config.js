@@ -13,6 +13,7 @@ export default defineConfig({
         name: 'Girth Tracker',
         short_name: 'GirthTracker',
         description: 'Offline-first Rubber Tree Girth Tracker',
+        id: '/',
         theme_color: '#1a1a1a',
         background_color: '#1a1a1a',
         start_url: '/',
@@ -27,7 +28,22 @@ export default defineConfig({
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          }
+        ],
+        screenshots: [
+          {
+            src: 'screenshot.png',
+            sizes: '1080x1920',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: 'GirthTracker - Rubber Tree Girth Measurement'
           }
         ]
       },
