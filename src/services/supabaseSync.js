@@ -78,7 +78,7 @@ export async function fetchAdminMeasurements(adminToken, filters) {
 
   const result = await response.json();
   if (!response.ok) {
-    throw new Error(result.error || 'Failed to fetch admin measurements');
+    throw new Error(result.error || result.message || 'Failed to fetch admin measurements');
   }
 
   return result; // { success: true, measurements: [...] }
@@ -98,7 +98,7 @@ export async function triggerAdminExport(adminToken, filters) {
 
   const result = await response.json();
   if (!response.ok) {
-    throw new Error(result.error || 'Failed to trigger export');
+    throw new Error(result.error || result.message || 'Failed to trigger export');
   }
 
   return result;
@@ -155,6 +155,6 @@ export async function adminCRUD(adminToken, action, payload = {}) {
     body: JSON.stringify({ action, ...payload })
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || `Admin CRUD failed for action: ${action}`);
+  if (!response.ok) throw new Error(result.error || result.message || `Admin CRUD failed for action: ${action}`);
   return result;
 }

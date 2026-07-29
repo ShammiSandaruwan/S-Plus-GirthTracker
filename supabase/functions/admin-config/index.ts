@@ -22,23 +22,32 @@ serve(async (req) => {
     // Validate admin session via GAS
     const gasUrl = Deno.env.get('GAS_URL') || '';
     if (gasUrl) {
-      const valRes = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
-      });
-      const valResult = await valRes.json();
-      if (!valResult.success) {
-        return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      try {
+        const valRes = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
         });
+        const valResult = await valRes.json();
+        if (!valResult.success) {
+          return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      } catch (err: any) {
+        return respond({ error: 'GAS Validation failed: ' + (err.message || JSON.stringify(err)) }, 500);
       }
     }
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') || '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    );
+    let supabaseAdmin;
+    try {
+      supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL') || '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+      );
+    } catch (err: any) {
+      return respond({ error: 'Failed to create Supabase client: ' + (err.message || JSON.stringify(err)) }, 500);
+    }
 
     const body = await req.json();
     const { action } = body;
@@ -93,7 +102,10 @@ serve(async (req) => {
     }
 
   } catch (err: any) {
-    return respond({ error: err.message }, 500);
+    return respond({ 
+      error: err.message || (typeof err === 'string' ? err : JSON.stringify(err)),
+      fullError: err
+    }, 500);
   }
 });
 
