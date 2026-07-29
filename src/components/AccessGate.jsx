@@ -10,10 +10,7 @@ import {
 } from '../services/accessControl';
 import { captureGPS, getLocationStatusText } from '../services/location';
 
-const ESTATES = import.meta.env.VITE_ESTATES
-  ?.split(',')
-  .map(s => s.trim())
-  .filter(Boolean) || [];
+import { db } from '../db';
 
 const REQUIRE_GPS = String(import.meta.env.VITE_REQUIRE_GPS_FOR_APPROVAL).trim().toLowerCase() === 'true';
 
@@ -34,6 +31,7 @@ export default function AccessGate({ onApproved }) {
   const [deviceId, setDeviceId] = useState('');
   const [telegramWarning, setTelegramWarning] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [estates, setEstates] = useState([]);
   const checkingRef = useRef(false);
 
   useEffect(() => {
@@ -58,6 +56,29 @@ export default function AccessGate({ onApproved }) {
     const init = async () => {
       const id = await getOrCreateDeviceId();
       setDeviceId(id);
+
+      // Load estates
+      try {
+        const localConfig = await db.fieldConfig.get(1);
+        if (localConfig && localConfig.estates) {
+          setEstates(localConfig.estates.map(e => e.name));
+        } else if (navigator.onLine) {
+          const { fetchFieldConfig } = await import('../services/supabaseSync');
+          const res = await fetchFieldConfig();
+          if (res.success && res.estates) {
+            setEstates(res.estates.map(e => e.name));
+            await db.fieldConfig.put({
+              id: 1,
+              version: res.configVersion,
+              estates: res.estates,
+              divisions: res.divisions,
+              fields: res.fields
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load configuration", err);
+      }
 
       const local = await getLocalAccessStatus();
 
@@ -215,13 +236,16 @@ export default function AccessGate({ onApproved }) {
     setTelegramWarning('');
   };
 
-  if (ESTATES.length === 0) {
+  if (estates.length === 0 && state !== 'loading') {
     return (
       <div className="app-container access-gate-container">
         <div className="glass-card access-gate-card">
           <AlertTriangle size={36} color="var(--accent-danger)" />
           <h1 className="access-gate-title">Configuration Error</h1>
-          <p className="access-gate-message">Estate list is not configured. Please contact your administrator.</p>
+          <p className="access-gate-message">Estate list could not be loaded. Please connect to the internet.</p>
+          <button className="btn" onClick={() => window.location.reload()} style={{ marginTop: '1rem' }}>
+            <RefreshCw size={18} /> Retry
+          </button>
         </div>
       </div>
     );
@@ -336,7 +360,7 @@ export default function AccessGate({ onApproved }) {
             <label>Estate</label>
             <select required value={estate} onChange={(e) => setEstate(e.target.value)}>
               <option value="">Select Estate...</option>
-              {ESTATES.map(est => <option key={est} value={est}>{est}</option>)}
+              {estates.map(est => <option key={est} value={est}>{est}</option>)}
             </select>
           </div>
 

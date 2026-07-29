@@ -13,7 +13,11 @@ function isAbnormal(m) {
   return m.abnormalFlag === true || m.abnormalFlag === 1 || m.abnormalFlag === 'Yes' || m.abnormalFlag === 'true';
 }
 
+import { fetchAdminMeasurements, triggerAdminExport } from '../services/supabaseSync';
+
 import MeasurementMap from './MeasurementMap';
+import AdminConfigTab from './AdminConfigTab';
+import { Settings2 } from 'lucide-react';
 
 function AdminMap({ measurements, filter, mapRef }) {
   const [showAccuracy, setShowAccuracy] = useState(false);
@@ -59,14 +63,19 @@ function DevicesTab({ token, onAuthError }) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'admin_list_devices', adminSessionToken: token }),
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      });
-      const data = await res.json();
+      const { adminCRUD } = await import('../services/supabaseSync');
+      const data = await adminCRUD(token, 'list_devices');
       if (data.success) {
-        setDevices(data.devices || []);
+        // Map snake_case to camelCase
+        const mappedDevices = (data.devices || []).map(d => ({
+           deviceIdHash: d.device_id_hash,
+           estate: d.estate_code,
+           operatorName: d.operator_name,
+           approvedAt: d.approved_at,
+           lastSeenAt: d.last_seen_at,
+           revoked: d.revoked
+        }));
+        setDevices(mappedDevices);
       } else {
         onAuthError(data.error);
       }
@@ -92,12 +101,8 @@ function DevicesTab({ token, onAuthError }) {
     if (!confirm('Revoke access for this device? It will no longer be able to sync data.')) return;
     setRevoking(deviceIdHash);
     try {
-      const res = await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'admin_revoke_device', adminSessionToken: token, deviceIdHash }),
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      });
-      const data = await res.json();
+      const { adminCRUD } = await import('../services/supabaseSync');
+      const data = await adminCRUD(token, 'revoke_device', { deviceIdHash });
       if (data.success) {
         loadDevices();
       } else {
@@ -127,13 +132,30 @@ function DevicesTab({ token, onAuthError }) {
       )}
 
       <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Shield size={18} color="#4caf50" /> Active Devices ({activeDevices.length})
           </h3>
-          <button className="btn btn-secondary" onClick={loadDevices} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
-            {loading ? <RefreshCw className="pulse" size={14} /> : <RefreshCw size={14} />} Refresh
-          </button>
+          <div style={{display: 'flex', gap: '0.5rem'}}>
+            <button className="btn btn-secondary" onClick={async () => {
+              if(!confirm('Migrate devices from GAS?')) return;
+              setLoading(true);
+              const { adminCRUD } = await import('../services/supabaseSync');
+              const res = await adminCRUD(token, 'migrate_devices', { adminToken: token });
+              if (res.success) {
+                 alert(`Migration complete.\nInserted: ${res.report.inserted}\nSkipped: ${res.report.skipped}\nConflicts: ${res.report.conflicts.length}\nErrors: ${res.report.errors.length}`);
+                 loadDevices();
+              } else {
+                 alert('Migration failed: ' + res.error);
+              }
+              setLoading(false);
+            }} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+              Migrate GAS Devices
+            </button>
+            <button className="btn btn-secondary" onClick={loadDevices} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+              {loading ? <RefreshCw className="pulse" size={14} /> : <RefreshCw size={14} />} Refresh
+            </button>
+          </div>
         </div>
 
         {loading && devices.length === 0 ? (
@@ -418,30 +440,65 @@ export default function AdminPage() {
     setLoadingData(true);
     setError('');
     try {
-      const res = await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'admin_fetch_measurements',
-          adminSessionToken: token,
-          estate: selectedEstate,
-          division: divisionFilter,
-          fieldNo: fieldNoFilter,
-          dateFrom,
-          dateTo,
-          status: statusFilter
-        }),
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      const data = await fetchAdminMeasurements(token, {
+        estate: selectedEstate,
+        division: divisionFilter,
+        fieldNo: fieldNoFilter,
+        dateFrom,
+        dateTo,
+        status: statusFilter
       });
-      const data = await res.json();
       if (data.success) {
         setMeasurements(data.measurements || []);
       } else {
         handleAuthError(data.error);
       }
-    } catch {
-      setError('Failed to load measurements.');
+    } catch (err) {
+      if (err.message.includes('Invalid or expired')) {
+        handleAuthError(err.message);
+      } else {
+        setError(`Failed to load measurements: ${err.message}`);
+      }
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    if (!selectedEstate || !fieldNoFilter) {
+      setError('You must select an Estate and a Field No to export.');
+      return;
+    }
+    
+    if (!window.confirm(`Are you sure you want to export Field ${fieldNoFilter} for Estate ${selectedEstate}? This will replace any existing sheet data for this field.`)) {
+      return;
+    }
+
+    setExporting(true);
+    setError('');
+    try {
+      const result = await triggerAdminExport(token, {
+        estate: selectedEstate,
+        division: divisionFilter,
+        fieldNo: fieldNoFilter,
+        dateFrom,
+        dateTo
+      });
+      
+      if (result.success) {
+        alert(`Export successful! ${result.rowCount} records updated in Google Sheets.`);
+        // Reload to show exportedAt tags
+        await loadData();
+      }
+    } catch (err) {
+      if (err.message.includes('Invalid or expired')) {
+        handleAuthError(err.message);
+      } else {
+        setError(`Export failed: ${err.message}`);
+      }
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -493,6 +550,7 @@ export default function AdminPage() {
   const tabs = [
     { id: 'measurements', label: 'Measurements', icon: <Database size={16} /> },
     { id: 'devices', label: 'Devices', icon: <Smartphone size={16} /> },
+    { id: 'config', label: 'Configuration', icon: <Settings2 size={16} /> },
     { id: 'qrcodes', label: 'QR Codes', icon: <QrCode size={16} /> },
   ];
 
@@ -572,6 +630,12 @@ export default function AdminPage() {
                 {loadingData ? 'Loading...' : 'Load Data'}
               </button>
               {measurements.length > 0 && (
+                <button className="btn" onClick={handleExport} disabled={exporting || !fieldNoFilter} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem', marginLeft: '0.5rem', background: 'var(--success)', color: '#fff' }}>
+                  {exporting ? <RefreshCw className="pulse" size={20} /> : <Download size={20} />}
+                  {exporting ? 'Exporting...' : 'Export Field to Sheet'}
+                </button>
+              )}
+              {measurements.length > 0 && (
                 <button className="btn btn-secondary" onClick={() => mapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem', marginLeft: '0.5rem' }}>
                   View Map
                 </button>
@@ -613,6 +677,11 @@ export default function AdminPage() {
       {/* Devices Tab */}
       {activeTab === 'devices' && (
         <DevicesTab token={token} onAuthError={handleAuthError} />
+      )}
+      
+      {/* Configuration Tab */}
+      {activeTab === 'config' && (
+        <AdminConfigTab token={token} />
       )}
 
       {/* QR Codes Tab */}

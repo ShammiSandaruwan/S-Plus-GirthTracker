@@ -9,6 +9,7 @@ import FieldInsightsModal from './components/FieldInsightsModal';
 import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
 import { girthToCm, getRecommendation } from './services/recommendation';
 import { checkAbnormal } from './services/analytics';
+import { syncToSupabase, undoFromSupabase, checkDuplicateInDexie } from './services/supabaseSync';
 import AdminPage from './components/AdminPage';
 import './index.css';
 
@@ -66,12 +67,6 @@ function playBeep(type = 'success') {
     console.debug('Audio error:', e);
   }
 }
-
-// Parse estate list from environment
-const ESTATES = import.meta.env.VITE_ESTATES
-  ?.split(',')
-  .map(s => s.trim())
-  .filter(Boolean) || [];
 
 function App() {
   const [accessApproved, setAccessApproved] = useState(!REQUIRE_ACCESS_APPROVAL);
@@ -181,6 +176,11 @@ function TrackerApp({ approvedData }) {
   const [showFieldInsights, setShowFieldInsights] = useState(() => shouldOpenInsightsFromUrl());
   const [showNewFieldWizard, setShowNewFieldWizard] = useState(false);
   const [newFieldData, setNewFieldData] = useState({ division: '', fieldNo: '', extent: '', treeNo: 1 });
+  
+  const [configEstates, setConfigEstates] = useState([]);
+  const [configDivisions, setConfigDivisions] = useState([]);
+  const [configFields, setConfigFields] = useState([]);
+  const [configVersion, setConfigVersion] = useState(0);
 
   const openNewFieldWizard = () => {
     setNewFieldData({
@@ -201,6 +201,15 @@ function TrackerApp({ approvedData }) {
 
   useEffect(() => {
     const loadSettings = async () => {
+      // Load config first
+      const localConfig = await db.fieldConfig.get(1);
+      if (localConfig) {
+        setConfigEstates(localConfig.estates || []);
+        setConfigDivisions(localConfig.divisions || []);
+        setConfigFields(localConfig.fields || []);
+        setConfigVersion(localConfig.version || 0);
+      }
+
       let stored = await db.settings.get(1);
       
       // Merge with approved data if it exists
@@ -234,10 +243,6 @@ function TrackerApp({ approvedData }) {
         }
         setSettings(stored);
         if (stored.estate && stored.division && stored.fieldNo && stored.operatorName) {
-           // We keep setup incomplete if we want the user to confirm field/division every time, 
-           // but let's restore it if sessionId is present and recent. For simplicity, let's just 
-           // require them to hit "Save & Start" again to generate a new session ID if they refresh,
-           // OR if there is an active session, skip it.
            if (stored.sessionId) {
               setIsSetupComplete(true);
            }
@@ -348,7 +353,6 @@ function TrackerApp({ approvedData }) {
 
   const syncPending = useCallback(async () => {
     if (!isOnline || isSyncingRef.current || authError) return;
-    if (!GAS_URL || GAS_URL.includes('YOUR_SCRIPT_ID')) return;
     
     const currentSettings = settingsRef.current;
     if (!currentSettings.deviceId || !currentSettings.deviceToken) return;
@@ -364,7 +368,6 @@ function TrackerApp({ approvedData }) {
     }
 
     try {
-      // Chunking by 500
       const batchSize = 500;
       const batches = [];
       for (let i = 0; i < pending.length; i += batchSize) {
@@ -372,45 +375,31 @@ function TrackerApp({ approvedData }) {
       }
 
       for (const batch of batches) {
-         const currentSettings = settingsRef.current;
-         const payload = {
-           action: "sync_measurements",
-           deviceId: currentSettings.deviceId,
-           deviceToken: currentSettings.deviceToken,
-           estate: currentSettings.estate,
-           operatorName: currentSettings.operatorName,
-           measurements: batch
-         };
-         
-         const response = await fetch(GAS_URL, {
-           method: 'POST',
-           body: JSON.stringify(payload),
-           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-         });
-         
-         const result = await response.json();
-         if (result.success) {
-           const syncedIds = result.syncedIds || batch.map(b => b.id);
-           if (syncedIds.length > 0) {
-             await db.measurements.where('id').anyOf(syncedIds).modify({ syncStatus: 'synced' });
+         try {
+           const result = await syncToSupabase(
+             batch, 
+             currentSettings.deviceId, 
+             currentSettings.deviceToken, 
+             currentSettings.estate, 
+             currentSettings.operatorName
+           );
+
+           if (result.success) {
+             const syncedIds = result.syncedIds || batch.map(b => b.id);
+             if (syncedIds.length > 0) {
+               await db.measurements.where('id').anyOf(syncedIds).modify({ syncStatus: 'synced' });
+             }
+             setSyncError('');
+             setAuthError('');
            }
-           
-           if (result.failed && result.failed.length > 0) {
-             const failedIds = result.failed.map(f => f.localId);
-             await db.measurements.where('id').anyOf(failedIds).modify({ syncStatus: 'failed' });
-           }
-           
-           setSyncError('');
-           setAuthError('');
-         } else {
-           if (result.errorType === 'auth_failed' || result.errorType === 'subscription_expired') {
-             setAuthError(result.error || 'Access approval required.');
-             // Stop further batches
+         } catch (err) {
+           if (err.message.includes('Device validation failed') || err.message.includes('auth_failed')) {
+             setAuthError('Access approval required.');
              break;
            } else {
              const ids = batch.map(p => p.id);
              await db.measurements.where('id').anyOf(ids).modify({ syncStatus: 'failed' });
-             setSyncError(`Sync error: ${result.error || 'Unknown server error'}`);
+             setSyncError(`Sync error: ${err.message}`);
            }
          }
       }
@@ -473,31 +462,72 @@ function TrackerApp({ approvedData }) {
 
     const loc = ENABLE_GPS_TAGGING ? getLastKnownLocation() : { latitude: null, longitude: null, accuracy: null, status: 'unavailable', googleMapLink: null };
 
-    const newMeasurement = {
-      estate: currentSettings.estate,
-      division: currentSettings.division,
-      fieldNo: currentSettings.fieldNo,
-      extent: parseFloat(currentSettings.extent),
-      treeNo: parseInt(currentSettings.treeNo),
-      operatorName: currentSettings.operatorName,
-      sessionId: currentSettings.sessionId,
-      caliperReading,
-      girth,
-      girthCm,
-      recommendationStatus: recommendation.status,
-      recommendationText: recommendation.text,
-      abnormalFlag,
-      abnormalReason,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      gpsAccuracy: loc.accuracy,
-      gpsStatus: loc.status,
-      googleMapLink: loc.googleMapLink,
-      timestamp: new Date().toISOString(),
-      syncStatus: 'pending'
-    };
+    const duplicate = await checkDuplicateInDexie(
+      currentSettings.estate,
+      currentSettings.division,
+      currentSettings.fieldNo,
+      currentSettings.extent,
+      currentSettings.treeNo
+    );
 
-    await db.measurements.add(newMeasurement);
+    // Look up fieldId from config
+    let fieldId = null;
+    if (configFields.length > 0) {
+       const f = configFields.find(fld => fld.field_code === currentSettings.fieldNo);
+       if (f) fieldId = f.id;
+    }
+
+    if (duplicate) {
+      if (!window.confirm(`Tree #${currentSettings.treeNo} has already been measured in this field (${duplicate.girth}"). Do you want to overwrite it?`)) {
+        return; // user cancelled
+      }
+      
+      // Update existing
+      await db.measurements.update(duplicate.id, {
+        fieldId,
+        caliperReading,
+        girth,
+        girthCm,
+        recommendationStatus: recommendation.status,
+        recommendationText: recommendation.text,
+        abnormalFlag,
+        abnormalReason,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        gpsAccuracy: loc.accuracy,
+        gpsStatus: loc.status,
+        googleMapLink: loc.googleMapLink,
+        timestamp: new Date().toISOString(),
+        syncStatus: 'pending'
+      });
+    } else {
+      const newMeasurement = {
+        fieldId,
+        estate: currentSettings.estate,
+        division: currentSettings.division,
+        fieldNo: currentSettings.fieldNo,
+        extent: parseFloat(currentSettings.extent),
+        treeNo: parseInt(currentSettings.treeNo),
+        operatorName: currentSettings.operatorName,
+        sessionId: currentSettings.sessionId,
+        caliperReading,
+        girth,
+        girthCm,
+        recommendationStatus: recommendation.status,
+        recommendationText: recommendation.text,
+        abnormalFlag,
+        abnormalReason,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        gpsAccuracy: loc.accuracy,
+        gpsStatus: loc.status,
+        googleMapLink: loc.googleMapLink,
+        timestamp: new Date().toISOString(),
+        syncStatus: 'pending'
+      };
+
+      await db.measurements.add(newMeasurement);
+    }
     
     if ('vibrate' in navigator) navigator.vibrate([100]);
     if (currentSettings.audioConfirmationEnabled) playBeep('success');
@@ -507,13 +537,12 @@ function TrackerApp({ approvedData }) {
     const nextTreeNo = parseInt(currentSettings.treeNo) + 1;
     const newSettings = { ...currentSettings, treeNo: nextTreeNo };
     setSettings(newSettings);
-    
-    await db.settings.put({id: 1, ...newSettings});
+        await db.settings.put({id: 1, ...newSettings});
 
-    if (navigator.onLine && !authError) {
-      syncPending().catch(console.error);
-    }
-  }, [syncPending, authError]);
+      if (navigator.onLine && !authError) {
+        syncPending().catch(console.error);
+      }
+    }, [syncPending, authError, configFields]);
 
   useEffect(() => {
     if (!isSetupComplete) return;
@@ -635,26 +664,17 @@ function TrackerApp({ approvedData }) {
       await db.measurements.delete(lastMeasurement.id);
       await db.settings.put({ id: 1, ...newSettings });
 
-      // Bug 1: If synced, also delete from Google Sheets
-      if (lastMeasurement.syncStatus === 'synced' && GAS_URL && !GAS_URL.includes('YOUR_SCRIPT_ID')) {
+      // If synced, also delete from Supabase
+      if (lastMeasurement.syncStatus === 'synced') {
         try {
-          await fetch(GAS_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-              action: 'delete_measurement',
-              deviceId: currentSettings.deviceId,
-              deviceToken: currentSettings.deviceToken,
-              estate: currentSettings.estate,
-              // Unique Dexie id for exact row targeting; treeNo+timestamp kept as legacy fallback
-              measurementId: lastMeasurement.id,
-              sessionId: lastMeasurement.sessionId,
-              treeNo: lastMeasurement.treeNo,
-              timestamp: lastMeasurement.timestamp
-            }),
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          });
-        } catch {
-          // Best-effort: local undo succeeds even if remote delete fails
+          await undoFromSupabase(
+            lastMeasurement,
+            currentSettings.deviceId,
+            currentSettings.deviceToken,
+            currentSettings.operatorName
+          );
+        } catch (err) {
+          console.warn('Failed to undo from Supabase remotely, but deleted locally', err);
         }
       }
 
@@ -804,14 +824,14 @@ function TrackerApp({ approvedData }) {
             </div>
             <div className="form-group">
               <label>Estate</label>
-              {ESTATES.length > 0 ? (
+              {configEstates.length > 0 ? (
                 <select
                   required
                   value={settings.estate}
-                  onChange={e => setSettings({...settings, estate: e.target.value})}
+                  onChange={e => setSettings({...settings, estate: e.target.value, division: '', fieldNo: '', extent: ''})}
                 >
                   <option value="">Select Estate...</option>
-                  {ESTATES.map(est => <option key={est} value={est}>{est}</option>)}
+                  {configEstates.map(est => <option key={est.id} value={est.name}>{est.name}</option>)}
                 </select>
               ) : (
                 <input 
@@ -819,41 +839,86 @@ function TrackerApp({ approvedData }) {
                   required 
                   placeholder="e.g. Sample Estate"
                   value={settings.estate}
-                  onChange={e => setSettings({...settings, estate: e.target.value})}
+                  onChange={e => setSettings({...settings, estate: e.target.value, division: '', fieldNo: '', extent: ''})}
                 />
               )}
             </div>
-            <div className="form-group">
-              <label>Division</label>
-              <input 
-                type="text" 
-                required 
-                placeholder="e.g. Sample Divi"
-                value={settings.division}
-                onChange={e => setSettings({...settings, division: e.target.value})}
-              />
-            </div>
-            <div className="input-row">
-              <div className="form-group">
-                <label>Field No</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={settings.fieldNo}
-                  onChange={e => setSettings({...settings, fieldNo: e.target.value})}
-                />
-              </div>
-              <div className="form-group">
-                <label>Extent (Ha)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  required 
-                  value={settings.extent}
-                  onChange={e => setSettings({...settings, extent: e.target.value})}
-                />
-              </div>
-            </div>
+            
+            {/* Cascading Logic */}
+            {(() => {
+              const selectedEstateObj = configEstates.find(e => e.name === settings.estate);
+              const availableDivisions = selectedEstateObj 
+                ? configDivisions.filter(d => d.estate_id === selectedEstateObj.id)
+                : [];
+                
+              const selectedDivisionObj = configDivisions.find(d => d.name === settings.division);
+              const availableFields = selectedDivisionObj
+                ? configFields.filter(f => f.division_id === selectedDivisionObj.id)
+                : [];
+
+              return (
+                <>
+                  <div className="form-group">
+                    <label>Division</label>
+                    {availableDivisions.length > 0 ? (
+                      <select
+                        required
+                        value={settings.division}
+                        onChange={e => setSettings({...settings, division: e.target.value, fieldNo: '', extent: ''})}
+                      >
+                        <option value="">Select Division...</option>
+                        {availableDivisions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                      </select>
+                    ) : (
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="e.g. Sample Divi"
+                        value={settings.division}
+                        onChange={e => setSettings({...settings, division: e.target.value, fieldNo: '', extent: ''})}
+                      />
+                    )}
+                  </div>
+                  <div className="input-row">
+                    <div className="form-group">
+                      <label>Field No</label>
+                      {availableFields.length > 0 ? (
+                        <select
+                          required
+                          value={settings.fieldNo}
+                          onChange={e => {
+                            const val = e.target.value;
+                            const f = availableFields.find(fld => fld.field_code === val);
+                            setSettings({...settings, fieldNo: val, extent: f ? f.extent_ha : ''});
+                          }}
+                        >
+                          <option value="">Select Field...</option>
+                          {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.field_code}</option>)}
+                        </select>
+                      ) : (
+                        <input 
+                          type="text" 
+                          required 
+                          value={settings.fieldNo}
+                          onChange={e => setSettings({...settings, fieldNo: e.target.value})}
+                        />
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label>Extent (Ha)</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        required 
+                        value={settings.extent}
+                        readOnly={availableFields.length > 0}
+                        onChange={e => setSettings({...settings, extent: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
             <div className="form-group">
               <label>Starting Tree Number</label>
               <input 
@@ -1119,7 +1184,7 @@ function TrackerApp({ approvedData }) {
         )}
       </div>
 
-      <div className="app-version">v{APP_VERSION}</div>
+      <div className="app-version">v{APP_VERSION} {configVersion > 0 && `(Config: v${configVersion})`}</div>
 
       {showNewFieldWizard && (
         <div className="session-report-overlay">
@@ -1156,20 +1221,62 @@ function TrackerApp({ approvedData }) {
                 await db.settings.put({ id: 1, ...newSettings });
                 setShowNewFieldWizard(false);
               }}>
-                <div className="form-group">
-                  <label>Division</label>
-                  <input required type="text" value={newFieldData.division} onChange={e => setNewFieldData({...newFieldData, division: e.target.value})} />
-                </div>
-                <div className="input-row new-field-grid">
-                  <div className="form-group">
-                    <label>Field No</label>
-                    <input required type="text" value={newFieldData.fieldNo} onChange={e => setNewFieldData({...newFieldData, fieldNo: e.target.value})} />
-                  </div>
-                  <div className="form-group">
-                    <label>Extent (Ha)</label>
-                    <input required type="number" step="0.01" value={newFieldData.extent} onChange={e => setNewFieldData({...newFieldData, extent: e.target.value})} />
-                  </div>
-                </div>
+                {(() => {
+                  const selectedEstateObj = configEstates.find(e => e.name === settings.estate);
+                  const availableDivisions = selectedEstateObj
+                    ? configDivisions.filter(d => d.estate_id === selectedEstateObj.id)
+                    : [];
+                    
+                  const selectedDivisionObj = configDivisions.find(d => d.name === newFieldData.division);
+                  const availableFields = selectedDivisionObj
+                    ? configFields.filter(f => f.division_id === selectedDivisionObj.id)
+                    : [];
+
+                  return (
+                    <>
+                      <div className="form-group">
+                        <label>Division</label>
+                        {availableDivisions.length > 0 ? (
+                          <select
+                            required
+                            value={newFieldData.division}
+                            onChange={e => setNewFieldData({...newFieldData, division: e.target.value, fieldNo: '', extent: ''})}
+                          >
+                            <option value="">Select Division...</option>
+                            {availableDivisions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                          </select>
+                        ) : (
+                          <input required type="text" value={newFieldData.division} onChange={e => setNewFieldData({...newFieldData, division: e.target.value, fieldNo: '', extent: ''})} />
+                        )}
+                      </div>
+                      <div className="input-row new-field-grid">
+                        <div className="form-group">
+                          <label>Field No</label>
+                          {availableFields.length > 0 ? (
+                            <select
+                              required
+                              value={newFieldData.fieldNo}
+                              onChange={e => {
+                                const val = e.target.value;
+                                const f = availableFields.find(fld => fld.field_code === val);
+                                setNewFieldData({...newFieldData, fieldNo: val, extent: f ? f.extent_ha : ''});
+                              }}
+                            >
+                              <option value="">Select Field...</option>
+                              {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.field_code}</option>)}
+                            </select>
+                          ) : (
+                            <input required type="text" value={newFieldData.fieldNo} onChange={e => setNewFieldData({...newFieldData, fieldNo: e.target.value})} />
+                          )}
+                        </div>
+                        <div className="form-group">
+                          <label>Extent (Ha)</label>
+                          <input required type="number" step="0.01" value={newFieldData.extent} readOnly={availableFields.length > 0} onChange={e => setNewFieldData({...newFieldData, extent: e.target.value})} />
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="form-group">
                   <label>Starting Tree Number</label>
                   <input required type="number" min="1" value={newFieldData.treeNo} onChange={e => setNewFieldData({...newFieldData, treeNo: e.target.value})} />
