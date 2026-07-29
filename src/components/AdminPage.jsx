@@ -227,25 +227,51 @@ function DevicesTab({ token, onAuthError }) {
 // ----------------------------------------------------
 // QR Code Generator Tab
 // ----------------------------------------------------
-function QRCodesTab({ estates }) {
+function QRCodesTab({ estates, divisions, fields }) {
   const canvasRef = useRef(null);
-  const [qrEstate, setQrEstate] = useState(estates[0] || '');
-  const [qrDivision, setQrDivision] = useState('');
-  const [qrField, setQrField] = useState('');
+  const [qrEstateId, setQrEstateId] = useState('');
+  const [qrDivisionId, setQrDivisionId] = useState('');
+  const [qrFieldId, setQrFieldId] = useState('');
   const [qrExtent, setQrExtent] = useState('');
   const [qrStartTree, setQrStartTree] = useState('1');
   const [qrUrl, setQrUrl] = useState('');
 
+  const activeEstates = estates.filter(e => e.active);
+  const activeDivisions = divisions.filter(d => d.active && d.estate_id === qrEstateId);
+  const activeFields = fields.filter(f => f.active && f.division_id === qrDivisionId);
+
+  const handleEstateChange = (val) => {
+    setQrEstateId(val);
+    setQrDivisionId('');
+    setQrFieldId('');
+    setQrExtent('');
+  };
+
+  const handleDivisionChange = (val) => {
+    setQrDivisionId(val);
+    setQrFieldId('');
+    setQrExtent('');
+  };
+
+  const handleFieldChange = (val) => {
+    setQrFieldId(val);
+    const f = fields.find(x => x.id === val);
+    if (f) setQrExtent(f.extent_ha || '');
+    else setQrExtent('');
+  };
+
+
+
   const doGenerateQR = useCallback(async () => {
-    if (!qrEstate || !qrField) {
+    if (!qrEstateId || !qrFieldId) {
       setQrUrl('');
       return;
     }
     const base = window.location.origin;
     const params = new URLSearchParams();
-    params.set('estate', qrEstate);
-    if (qrDivision) params.set('division', qrDivision);
-    params.set('field', qrField);
+    params.set('estate_id', qrEstateId);
+    if (qrDivisionId) params.set('division_id', qrDivisionId);
+    params.set('field_id', qrFieldId);
     if (qrExtent) params.set('extent', qrExtent);
     if (qrStartTree && qrStartTree !== '1') params.set('tree', qrStartTree);
 
@@ -263,7 +289,7 @@ function QRCodesTab({ estates }) {
         // QR generation failed silently
       }
     }
-  }, [qrEstate, qrDivision, qrField, qrExtent, qrStartTree]);
+  }, [qrEstateId, qrDivisionId, qrFieldId, qrExtent, qrStartTree]);
 
   useEffect(() => {
     const run = async () => {
@@ -275,7 +301,8 @@ function QRCodesTab({ estates }) {
   const downloadQR = () => {
     if (!canvasRef.current) return;
     const link = document.createElement('a');
-    link.download = `QR_${qrEstate}_${qrField}.png`;
+    const f = fields.find(x => x.id === qrFieldId);
+    link.download = `QR_${f ? f.field_code : 'Field'}.png`;
     link.href = canvasRef.current.toDataURL('image/png');
     link.click();
   };
@@ -286,30 +313,36 @@ function QRCodesTab({ estates }) {
         <QrCode size={18} /> Generate Field QR Code
       </h3>
       <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
-        Field workers scan this QR to pre-fill their setup screen instantly.
+        Field workers scan this QR to pre-fill their setup screen instantly. Only active fields are shown.
       </p>
 
       <div className="input-row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div className="form-group" style={{ flex: '1 1 180px' }}>
           <label>Estate *</label>
-          <select value={qrEstate} onChange={(e) => setQrEstate(e.target.value)}>
+          <select value={qrEstateId} onChange={(e) => handleEstateChange(e.target.value)}>
             <option value="">Select Estate...</option>
-            {estates.map(est => <option key={est} value={est}>{est}</option>)}
+            {activeEstates.map(est => <option key={est.id} value={est.id}>{est.name}</option>)}
           </select>
         </div>
         <div className="form-group" style={{ flex: '1 1 120px' }}>
           <label>Division</label>
-          <input type="text" placeholder="Optional" value={qrDivision} onChange={(e) => setQrDivision(e.target.value)} />
+          <select value={qrDivisionId} onChange={(e) => handleDivisionChange(e.target.value)} disabled={!qrEstateId}>
+            <option value="">Select Division...</option>
+            {activeDivisions.map(div => <option key={div.id} value={div.id}>{div.name}</option>)}
+          </select>
         </div>
         <div className="form-group" style={{ flex: '1 1 100px' }}>
           <label>Field No *</label>
-          <input type="text" placeholder="e.g. F01" value={qrField} onChange={(e) => setQrField(e.target.value)} required />
+          <select value={qrFieldId} onChange={(e) => handleFieldChange(e.target.value)} disabled={!qrDivisionId}>
+            <option value="">Select Field...</option>
+            {activeFields.map(f => <option key={f.id} value={f.id}>{f.field_code}</option>)}
+          </select>
         </div>
       </div>
       <div className="input-row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', marginTop: '0.5rem' }}>
         <div className="form-group" style={{ flex: '1 1 120px' }}>
           <label>Extent (Ha)</label>
-          <input type="number" step="0.01" placeholder="Optional" value={qrExtent} onChange={(e) => setQrExtent(e.target.value)} />
+          <input type="number" step="0.01" placeholder="Optional" value={qrExtent} onChange={(e) => setQrExtent(e.target.value)} readOnly />
         </div>
         <div className="form-group" style={{ flex: '1 1 120px' }}>
           <label>Start Tree</label>
@@ -317,7 +350,7 @@ function QRCodesTab({ estates }) {
         </div>
       </div>
 
-      {qrEstate && qrField && (
+      {qrEstateId && qrFieldId && (
         <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
           <canvas ref={canvasRef} style={{ borderRadius: '8px', border: '1px solid var(--border-color)' }} />
           <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.5rem', wordBreak: 'break-all' }}>
@@ -343,9 +376,13 @@ export default function AdminPage() {
 
   const [activeTab, setActiveTab] = useState('measurements');
   const [estates, setEstates] = useState([]);
-  const [selectedEstate, setSelectedEstate] = useState('');
-  const [divisionFilter, setDivisionFilter] = useState('');
-  const [fieldNoFilter, setFieldNoFilter] = useState('');
+  const [divisions, setDivisions] = useState([]);
+  const [fields, setFields] = useState([]);
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  const [selectedEstateId, setSelectedEstateId] = useState('');
+  const [divisionFilterId, setDivisionFilterId] = useState('');
+  const [fieldNoFilterId, setFieldNoFilterId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -365,35 +402,45 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    const fetchEstates = async () => {
+    const fetchConfig = async () => {
       try {
-        const res = await fetch(GAS_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'admin_list_estates', adminSessionToken: token }),
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        });
-        const data = await res.json();
-        if (data.success) {
-          setEstates(data.estates || []);
-          if (data.estates && data.estates.length > 0) {
-            setSelectedEstate(data.estates[0]);
-          }
+        const { adminCRUD } = await import('../services/supabaseSync');
+        const [estRes, divRes, fldRes] = await Promise.all([
+          adminCRUD(token, 'list_estates', { includeInactive: true }),
+          adminCRUD(token, 'list_divisions', { includeInactive: true }),
+          adminCRUD(token, 'list_fields', { includeInactive: true })
+        ]);
+        
+        if (estRes.success && divRes.success && fldRes.success) {
+          setEstates(estRes.estates || []);
+          setDivisions(divRes.divisions || []);
+          setFields(fldRes.fields || []);
+          setConfigLoaded(true);
         } else {
-          setError(data.error || 'Session expired. Please log in again.');
+          setError('Failed to load full configuration. Session may have expired.');
           sessionStorage.removeItem('admin_session_token');
           setToken(null);
-          setMeasurements([]);
-          setTotpCode('');
         }
       } catch {
-        setError('Failed to fetch estates.');
+        setError('Failed to fetch config.');
       }
     };
 
-    if (token && estates.length === 0) {
-      fetchEstates();
+    if (token && !configLoaded) {
+      fetchConfig();
     }
-  }, [token, estates.length]);
+  }, [token, configLoaded]);
+
+  const handleEstateChange = (val) => {
+    setSelectedEstateId(val);
+    setDivisionFilterId('');
+    setFieldNoFilterId('');
+  };
+
+  const handleDivisionChange = (val) => {
+    setDivisionFilterId(val);
+    setFieldNoFilterId('');
+  };
 
   const handleVerify = async (e) => {
     e.preventDefault();
@@ -436,14 +483,13 @@ export default function AdminPage() {
   }, []);
 
   const loadData = async () => {
-    if (!selectedEstate) return;
     setLoadingData(true);
     setError('');
     try {
       const data = await fetchAdminMeasurements(token, {
-        estate: selectedEstate,
-        division: divisionFilter,
-        fieldNo: fieldNoFilter,
+        estate_id: selectedEstateId,
+        division_id: divisionFilterId,
+        field_id: fieldNoFilterId,
         dateFrom,
         dateTo,
         status: statusFilter
@@ -466,12 +512,15 @@ export default function AdminPage() {
 
   const [exporting, setExporting] = useState(false);
   const handleExport = async () => {
-    if (!selectedEstate || !fieldNoFilter) {
+    if (!selectedEstateId || !fieldNoFilterId) {
       setError('You must select an Estate and a Field No to export.');
       return;
     }
     
-    if (!window.confirm(`Are you sure you want to export Field ${fieldNoFilter} for Estate ${selectedEstate}? This will replace any existing sheet data for this field.`)) {
+    const est = estates.find(e => e.id === selectedEstateId);
+    const fld = fields.find(f => f.id === fieldNoFilterId);
+
+    if (!window.confirm(`Are you sure you want to export Field ${fld?.field_code} for Estate ${est?.name}? This will replace any existing sheet data for this field.`)) {
       return;
     }
 
@@ -479,9 +528,9 @@ export default function AdminPage() {
     setError('');
     try {
       const result = await triggerAdminExport(token, {
-        estate: selectedEstate,
-        division: divisionFilter,
-        fieldNo: fieldNoFilter,
+        estate_id: selectedEstateId,
+        division_id: divisionFilterId,
+        field_id: fieldNoFilterId,
         dateFrom,
         dateTo
       });
@@ -592,18 +641,28 @@ export default function AdminPage() {
             <div className="input-row" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <div className="form-group" style={{ flex: '1 1 200px' }}>
                 <label>Estate</label>
-                <select value={selectedEstate} onChange={(e) => setSelectedEstate(e.target.value)}>
-                  <option value="">Select Estate...</option>
-                  {estates.map(est => <option key={est} value={est}>{est}</option>)}
+                <select value={selectedEstateId} onChange={(e) => handleEstateChange(e.target.value)}>
+                  <option value="">All Estates</option>
+                  {estates.map(est => <option key={est.id} value={est.id}>{est.name} {!est.active && '(Inactive)'}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ flex: '1 1 120px' }}>
                 <label>Division</label>
-                <input type="text" placeholder="Optional" value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} />
+                <select value={divisionFilterId} onChange={(e) => handleDivisionChange(e.target.value)} disabled={!selectedEstateId}>
+                  <option value="">All Divisions</option>
+                  {divisions.filter(d => d.estate_id === selectedEstateId).map(div => (
+                    <option key={div.id} value={div.id}>{div.name} {!div.active && '(Inactive)'}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group" style={{ flex: '1 1 120px' }}>
                 <label>Field No</label>
-                <input type="text" placeholder="Optional" value={fieldNoFilter} onChange={(e) => setFieldNoFilter(e.target.value)} />
+                <select value={fieldNoFilterId} onChange={(e) => setFieldNoFilterId(e.target.value)} disabled={!divisionFilterId}>
+                  <option value="">All Fields</option>
+                  {fields.filter(f => f.division_id === divisionFilterId).map(fld => (
+                    <option key={fld.id} value={fld.id}>{fld.field_code} {!fld.active && '(Inactive)'}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group" style={{ flex: '1 1 150px' }}>
                 <label>Status Filter</label>
@@ -625,12 +684,12 @@ export default function AdminPage() {
                 <label>Date To</label>
                 <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
-              <button className="btn" onClick={loadData} disabled={loadingData || !selectedEstate} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem' }}>
+              <button className="btn" onClick={loadData} disabled={loadingData} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem' }}>
                 {loadingData ? <RefreshCw className="pulse" size={20} /> : <Database size={20} />}
                 {loadingData ? 'Loading...' : 'Load Data'}
               </button>
               {measurements.length > 0 && (
-                <button className="btn" onClick={handleExport} disabled={exporting || !fieldNoFilter} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem', marginLeft: '0.5rem', background: 'var(--success)', color: '#fff' }}>
+                <button className="btn" onClick={handleExport} disabled={exporting || !fieldNoFilterId} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem', marginLeft: '0.5rem', background: 'var(--success)', color: '#fff' }}>
                   {exporting ? <RefreshCw className="pulse" size={20} /> : <Download size={20} />}
                   {exporting ? 'Exporting...' : 'Export Field to Sheet'}
                 </button>
@@ -686,7 +745,7 @@ export default function AdminPage() {
 
       {/* QR Codes Tab */}
       {activeTab === 'qrcodes' && (
-        <QRCodesTab estates={estates} />
+        <QRCodesTab estates={estates} divisions={divisions} fields={fields} />
       )}
     </div>
   );

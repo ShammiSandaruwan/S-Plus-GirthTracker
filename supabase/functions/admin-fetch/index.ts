@@ -28,14 +28,7 @@ serve(async (req) => {
       });
     }
 
-    const { estate, division, fieldNo, dateFrom, dateTo, status } = await req.json();
-
-    if (!estate) {
-      return new Response(JSON.stringify({ error: 'Estate is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    const { estate, division, fieldNo, estate_id, division_id, field_id, dateFrom, dateTo, status } = await req.json();
 
     // 1. Validate admin token using GAS (or via Supabase if token logic is migrated)
     const validateResponse = await fetch(gasUrl, {
@@ -57,14 +50,30 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 2. Fetch data
+    // Allow fetching across all estates if no specific estate or estate_id is provided
+    // If estate_id is provided, use it. Else fallback to text.
     let query = supabaseAdmin
       .from('census_measurements')
-      .select('*')
-      .eq('estate', estate);
+      .select('*');
 
-    if (division) query = query.eq('division', division);
-    if (fieldNo) query = query.eq('field_no', fieldNo);
+    if (estate_id) {
+      query = query.eq('estate_id', estate_id);
+    } else if (estate) {
+      query = query.eq('estate', estate);
+    }
+
+    if (division_id) {
+      query = query.eq('division_id', division_id);
+    } else if (division) {
+      query = query.eq('division', division);
+    }
+
+    if (field_id) {
+      query = query.eq('field_id', field_id);
+    } else if (fieldNo) {
+      query = query.eq('field_no', fieldNo);
+    }
+
     if (dateFrom) query = query.gte('measured_at', dateFrom);
     
     if (dateTo) {
