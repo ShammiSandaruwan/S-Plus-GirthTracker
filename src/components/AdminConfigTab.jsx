@@ -114,7 +114,7 @@ export default function AdminConfigTab({ token }) {
     try {
       const isNew = !editingDivision.id;
       const action = isNew ? 'create_division' : 'update_division';
-      const payload = { ...editingDivision, estate_id: selectedEstateId };
+      const payload = { ...editingDivision, estateId: selectedEstateId };
       const res = await adminCRUD(token, action, payload);
       if (res.success) {
         setMessage(`Division ${isNew ? 'created' : 'updated'} successfully.`);
@@ -141,7 +141,14 @@ export default function AdminConfigTab({ token }) {
         }
       }
 
-      const payload = { ...editingField, estate_id: selectedEstateId, division_id: selectedDivisionId };
+      const payload = { 
+        ...editingField, 
+        estateId: selectedEstateId, 
+        divisionId: selectedDivisionId,
+        fieldCode: editingField.field_code || editingField.fieldCode,
+        extentHa: editingField.extent_ha || editingField.extentHa,
+        displayName: editingField.display_name || editingField.displayName 
+      };
       const res = await adminCRUD(token, action, payload);
       if (res.success) {
         setMessage(`Field ${isNew ? 'created' : 'updated'} successfully.`);
