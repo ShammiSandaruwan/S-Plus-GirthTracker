@@ -481,17 +481,17 @@ function handleSendTelegram(parsed) {
   const safeOperator = safeTelegramText_(operatorName);
   const safeGpsStatus = safeTelegramText_(gpsStatus || 'unknown');
 
-  const text = \`New GirthTracker Access Request\\n\\n\` +
-               \`Estate: \${safeEstate}\\n\` +
-               \`Operator Name: \${safeOperator}\\n\` +
-               \`GPS Status: \${safeGpsStatus}\\n\` +
-               \`Requested At: \${new Date().toISOString()}\\n\\n\` +
-               \`Approve or deny this device.\`;
+  const text = `New GirthTracker Access Request\n\n` +
+               `Estate: ${safeEstate}\n` +
+               `Operator Name: ${safeOperator}\n` +
+               `GPS Status: ${safeGpsStatus}\n` +
+               `Requested At: ${new Date().toISOString()}\n\n` +
+               `Approve or deny this device.`;
 
   const inlineKeyboard = [
     [
-      { text: "✅ Approve", url: \`\${WEB_APP_URL}?action=approve&requestId=\${requestId}&adminKey=\${ADMIN_APPROVAL_KEY}\` },
-      { text: "❌ Deny", url: \`\${WEB_APP_URL}?action=deny&requestId=\${requestId}&adminKey=\${ADMIN_APPROVAL_KEY}\` }
+      { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
+      { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
     ]
   ];
 
@@ -550,12 +550,12 @@ function handleValidateSheetAccess(parsed) {
     }
     
     if (!sheet) {
-      return respondJson({ success: false, error: \`Tab '\${tabName}' not found in spreadsheet\` });
+      return respondJson({ success: false, error: `Tab '${tabName}' not found in spreadsheet` });
     }
     
     // Quick test: can we read properties?
     const name = sheet.getName();
-    return respondJson({ success: true, message: \`Access successful to tab '\${name}'\` });
+    return respondJson({ success: true, message: `Access successful to tab '${name}'` });
   } catch (e) {
     return respondJson({ success: false, error: e.message });
   }
