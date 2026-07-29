@@ -22,7 +22,6 @@ supabase functions deploy request-access --no-verify-jwt
 supabase functions deploy check-access --no-verify-jwt
 supabase functions deploy approve-device
 supabase functions deploy admin-config
-supabase functions deploy admin-devices
 supabase functions deploy sync-measurements
 supabase functions deploy undo-measurement
 supabase functions deploy export-field

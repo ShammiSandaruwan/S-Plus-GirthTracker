@@ -34,3 +34,4 @@ dist-ssr
 *.jpg
 build-log.txt
 lint-output.txt
+supabase/.temp/
