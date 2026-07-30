@@ -131,7 +131,9 @@ function respondHtml(message: string, isSuccess: boolean) {
         </div>
       </body>
     </html>`;
-  return new Response(html, { headers: { ...corsHeaders, 'Content-Type': 'text/html' } });
+  const headers = new Headers(corsHeaders);
+  headers.set('Content-Type', 'text/html; charset=utf-8');
+  return new Response(html, { headers });
 }
 
 async function handleApprove(
