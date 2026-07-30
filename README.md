@@ -258,9 +258,9 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 
 | Variable | Required | Description |
 |---|---|---|
-| `VITE_GAS_URL` | ✅ | Your deployed Google Apps Script Web App URL |
-| `VITE_ESTATES` | ❌ | Comma-separated estate names. Converts the Estate field from text input to a dropdown. |
-| `VITE_GAS_SECRET` | ❌ | Shared secret for securing the GAS endpoint. Must match `SHARED_SECRET` in the GAS script. |
+| `VITE_SUPABASE_URL` | ✅ | Your Supabase project URL (`https://xyz.supabase.co`) |
+| `VITE_SUPABASE_ANON_KEY` | ✅ | Your Supabase public anonymous key |
+| `VITE_GAS_URL` | ❌ | (Optional) Deployed Google Apps Script URL for legacy direct exports |
 | `VITE_REQUIRE_ACCESS_APPROVAL` | ❌ | Set to `"true"` to require device-level access approval before app use. |
 | `VITE_REQUIRE_GPS_FOR_APPROVAL` | ❌ | Set to `"true"` to require GPS location capture during the access request. |
 | `VITE_ENABLE_GPS_TAGGING` | ❌ | Set to `"true"` to tag each measurement with GPS coordinates and Google Maps link. |

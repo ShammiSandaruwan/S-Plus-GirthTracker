@@ -9,12 +9,12 @@ import FieldInsightsModal from './components/FieldInsightsModal';
 import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
 import { girthToCm, getRecommendation } from './services/recommendation';
 import { checkAbnormal } from './services/analytics';
-import { syncToSupabase, undoFromSupabase, checkDuplicateInDexie } from './services/supabaseSync';
+import { syncToSupabase, undoFromSupabase, fetchFieldConfig } from './services/supabaseSync';
+import { SUPABASE_URL } from './services/supabaseClient';
 import AdminPage from './components/AdminPage';
 import './index.css';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.1';
-const GAS_URL = import.meta.env.VITE_GAS_URL || '';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
 const IS_MAINTENANCE_MODE = isEnvFlagEnabled(import.meta.env.VITE_MAINTENANCE_MODE);
@@ -999,9 +999,9 @@ function TrackerApp({ approvedData }) {
         </div>
       )}
 
-      {(!GAS_URL || GAS_URL.includes('YOUR_SCRIPT_ID')) && (
+      {(!SUPABASE_URL || SUPABASE_URL.includes('your-project.supabase.co')) && (
         <div className="warning-banner">
-          <AlertTriangle size={16} /> Google Apps Script URL not configured. Sync is disabled.
+          <AlertTriangle size={16} /> Supabase URL not configured. Sync is disabled.
         </div>
       )}
 

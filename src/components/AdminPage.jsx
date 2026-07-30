@@ -3,7 +3,8 @@ import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangl
 import QRCode from 'qrcode';
 import 'leaflet/dist/leaflet.css';
 
-const GAS_URL = import.meta.env.VITE_GAS_URL || '';
+import { fetchAdminMeasurements, triggerAdminExport } from '../services/supabaseSync';
+import { SUPABASE_FUNCTIONS_URL } from '../services/supabaseClient';
 
 function getStatus(m) {
   return String(m.recommendationText || '').toLowerCase();
@@ -12,8 +13,6 @@ function getStatus(m) {
 function isAbnormal(m) {
   return m.abnormalFlag === true || m.abnormalFlag === 1 || m.abnormalFlag === 'Yes' || m.abnormalFlag === 'true';
 }
-
-import { fetchAdminMeasurements, triggerAdminExport } from '../services/supabaseSync';
 
 import MeasurementMap from './MeasurementMap';
 import AdminConfigTab from './AdminConfigTab';
@@ -451,15 +450,15 @@ export default function AdminPage() {
     setVerifying(true);
     setError('');
     try {
-      const res = await fetch(GAS_URL, {
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/admin-auth`, {
         method: 'POST',
-        body: JSON.stringify({ action: 'admin_verify_totp', code: totpCode }),
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', code: totpCode }),
       });
       const data = await res.json();
-      if (data.success) {
-        setToken(data.adminSessionToken);
-        sessionStorage.setItem('admin_session_token', data.adminSessionToken);
+      if (data.success && data.token) {
+        setToken(data.token);
+        sessionStorage.setItem('admin_session_token', data.token);
       } else {
         setError(data.error || 'Verification failed.');
       }
