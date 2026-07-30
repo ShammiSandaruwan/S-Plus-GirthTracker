@@ -73,9 +73,17 @@ serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // The raw device token was delivered through approval and cached client-side.
-      // For the transition period, we also check GAS cache.
-      // On new approvals, the token is embedded in the approval response.
+      // Deliver the raw device token exactly once, then clear it so it
+      // can never be read from the database again.
+      let deviceToken = null;
+      if (request.pending_token) {
+        deviceToken = request.pending_token;
+        await supabaseAdmin
+          .from('access_requests')
+          .update({ pending_token: null, token_claimed_at: new Date().toISOString() })
+          .eq('request_id', requestId);
+      }
+
       return new Response(JSON.stringify({
         success: true,
         status: 'approved',
@@ -83,9 +91,8 @@ serve(async (req) => {
         operatorName: device.operator_name || request.operator_name,
         approvedAt: request.approved_at,
         expiresAt: '',
-        // deviceToken is NOT returned here — it was delivered once during approval.
-        // Client must have saved it locally. If lost, admin must re-approve.
-        needsTokenFromApproval: true,
+        deviceToken,
+        needsTokenFromApproval: !deviceToken,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 

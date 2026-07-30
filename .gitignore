@@ -35,3 +35,4 @@ dist-ssr
 build-log.txt
 lint-output.txt
 supabase/.temp/
+fix-instructions.md
