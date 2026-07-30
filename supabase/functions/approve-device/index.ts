@@ -18,62 +18,121 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     );
 
-    const bodyText = await req.text();
-    const body = JSON.parse(bodyText);
-    const { action, requestId } = body;
+    let action, requestId, body, isAdminKeyValid = false;
 
-    // Determine auth method: HMAC (from GAS Telegram callback) or admin token (from /mod)
-    const hasHmac = req.headers.get('x-gas-signature');
-    const adminToken = req.headers.get('x-admin-token');
-
-    if (hasHmac) {
-      // HMAC verification for GAS → Edge Function calls
-      const hmacResult = await verifyGasHmac(req, bodyText, supabaseAdmin);
-      if (!hmacResult.valid) {
-        return new Response(JSON.stringify({ error: hmacResult.error }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      action = url.searchParams.get('action');
+      requestId = url.searchParams.get('requestId');
+      const adminKey = url.searchParams.get('adminKey');
+      
+      const expectedAdminKey = Deno.env.get('ADMIN_APPROVAL_KEY');
+      if (!expectedAdminKey) {
+        return respondHtml('Configuration error: ADMIN_APPROVAL_KEY not set in Supabase', false);
       }
-    } else if (adminToken) {
-      // Admin session token validation via GAS
-      const gasUrl = Deno.env.get('GAS_URL') || '';
-      if (gasUrl) {
-        const valRes = await fetch(gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
-        });
-        const valResult = await valRes.json();
-        if (!valResult.success) {
-          return new Response(JSON.stringify({ error: 'Invalid admin session' }), {
+      if (adminKey !== expectedAdminKey) {
+        return respondHtml('Invalid admin key', false);
+      }
+      isAdminKeyValid = true;
+      body = { performedBy: 'telegram_admin' };
+    } else {
+      const bodyText = await req.text();
+      body = JSON.parse(bodyText);
+      action = body.action;
+      requestId = body.requestId;
+
+      // Determine auth method: HMAC (from GAS Telegram callback) or admin token (from /mod)
+      const hasHmac = req.headers.get('x-gas-signature');
+      const adminToken = req.headers.get('x-admin-token');
+
+      if (hasHmac) {
+        // HMAC verification for GAS → Edge Function calls
+        const hmacResult = await verifyGasHmac(req, bodyText, supabaseAdmin);
+        if (!hmacResult.valid) {
+          return new Response(JSON.stringify({ error: hmacResult.error }), {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+      } else if (adminToken) {
+        // Admin session token validation via GAS
+        const gasUrl = Deno.env.get('GAS_URL') || '';
+        if (gasUrl) {
+          const valRes = await fetch(gasUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
+          });
+          const valResult = await valRes.json();
+          if (!valResult.success) {
+            return new Response(JSON.stringify({ error: 'Invalid admin session' }), {
+              status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+      } else {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       }
-    } else {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
     }
 
     if (action === 'approve') {
-      return await handleApprove(requestId, body, supabaseAdmin);
+      const result = await handleApprove(requestId, body, supabaseAdmin);
+      return req.method === 'GET' ? handleHtmlResult(result, 'approve') : result;
     } else if (action === 'deny') {
-      return await handleDeny(requestId, body, supabaseAdmin);
+      const result = await handleDeny(requestId, body, supabaseAdmin);
+      return req.method === 'GET' ? handleHtmlResult(result, 'deny') : result;
     } else if (action === 'revoke') {
-      return await handleRevoke(body, supabaseAdmin);
+      const result = await handleRevoke(body, supabaseAdmin);
+      return req.method === 'GET' ? handleHtmlResult(result, 'revoke') : result;
     } else {
+      if (req.method === 'GET') return respondHtml('Unknown action', false);
       return new Response(JSON.stringify({ error: 'Unknown action' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
   } catch (err: any) {
+    if (req.method === 'GET') return respondHtml('Error processing request: ' + err.message, false);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });
+
+async function handleHtmlResult(response: Response, action: string) {
+  const data = await response.json();
+  if (response.status === 200 && data.success) {
+    return respondHtml('Action successful: ' + (data.message || action), true);
+  } else {
+    return respondHtml('Action failed: ' + (data.error || 'Unknown error'), false);
+  }
+}
+
+function respondHtml(message: string, isSuccess: boolean) {
+  const color = isSuccess ? '#4CAF50' : '#F44336';
+  const icon = isSuccess ? '✅' : '❌';
+  const html = `<!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f9f9f9; }
+          .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 90%; }
+          h2 { color: ${color}; margin-top: 10px; }
+          .icon { font-size: 48px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">${icon}</div>
+          <h2>${message}</h2>
+          <p>You can now close this window.</p>
+        </div>
+      </body>
+    </html>`;
+  return new Response(html, { headers: { ...corsHeaders, 'Content-Type': 'text/html' } });
+}
 
 async function handleApprove(
   requestId: string,
