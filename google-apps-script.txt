@@ -93,11 +93,11 @@ function doGet(e) {
   const adminKey = e.parameter.adminKey;
 
   if (adminKey !== ADMIN_APPROVAL_KEY) {
-    return ContentService.createTextOutput("Invalid admin key.");
+    return respondHtml("Invalid admin key.", false);
   }
 
   if (!requestId) {
-    return ContentService.createTextOutput("Request not found.");
+    return respondHtml("Request not found.", false);
   }
 
   try {
@@ -106,10 +106,36 @@ function doGet(e) {
     } else if (action === "deny") {
       return handleDeny(requestId);
     }
-    return ContentService.createTextOutput("Unknown action.");
+    return respondHtml("Unknown action.", false);
   } catch (error) {
-    return ContentService.createTextOutput("Error: " + error.toString());
+    return respondHtml("Error processing request: " + error.toString(), false);
   }
+}
+
+function respondHtml(message, isSuccess) {
+  const color = isSuccess ? "#4CAF50" : "#F44336";
+  const icon = isSuccess ? "✅" : "❌";
+  return HtmlService.createHtmlOutput(
+    `<!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f9f9f9; }
+          .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 90%; }
+          h2 { color: ${color}; margin-top: 10px; }
+          .icon { font-size: 48px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">${icon}</div>
+          <h2>${message}</h2>
+          <p>You can now close this window.</p>
+        </div>
+      </body>
+    </html>`
+  );
 }
 
 // ----------------------------------------------------
@@ -426,7 +452,7 @@ function handleDeny(requestId) {
 
 function callSupabaseApproveDevice(requestId, action) {
   if (!SUPABASE_APPROVE_URL || !GAS_SHARED_SECRET) {
-    return ContentService.createTextOutput("Configuration error: SUPABASE_APPROVE_URL or GAS_SHARED_SECRET not set.");
+    return respondHtml("Configuration error: SUPABASE_APPROVE_URL or GAS_SHARED_SECRET not set.", false);
   }
 
   const payload = JSON.stringify({ action: action, requestId: requestId, performedBy: "telegram_admin" });
@@ -451,12 +477,12 @@ function callSupabaseApproveDevice(requestId, action) {
     const response = UrlFetchApp.fetch(SUPABASE_APPROVE_URL, options);
     const result = JSON.parse(response.getContentText());
     if (response.getResponseCode() === 200 && result.success) {
-      return ContentService.createTextOutput("Action successful: " + (result.message || action));
+      return respondHtml("Action successful: " + (result.message || action), true);
     } else {
-      return ContentService.createTextOutput("Action failed: " + (result.error || "Unknown error"));
+      return respondHtml("Action failed: " + (result.error || result.message || "Unknown error"), false);
     }
   } catch (e) {
-    return ContentService.createTextOutput("Error contacting Supabase: " + e.toString());
+    return respondHtml("Error contacting Supabase: " + e.toString(), false);
   }
 }
 
