@@ -27,3 +27,10 @@ db.version(5).stores({
   settings: 'id, estate, deviceId, accessStatus',
   fieldConfig: 'id'
 });
+
+db.version(6).stores({
+  measurements: '++id, syncStatus, [estate+fieldNo], sessionId, timestamp, abnormalFlag, recommendationStatus, [estate+division+fieldNo+extent+treeNo], [fieldId+treeNo]',
+  settings: 'id, estate, deviceId, accessStatus',
+  fieldConfig: 'id'
+});
+

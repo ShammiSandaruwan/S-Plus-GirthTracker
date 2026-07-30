@@ -385,7 +385,35 @@ input:focus, select:focus {
 }
 
 .status-dot.online { background: var(--accent-primary); box-shadow: 0 0 8px var(--accent-primary); }
-.status-dot.offline { background: var(--accent-pending); box-shadow: 0 0 8px var(--accent-pending); }
+.status-dot.offline { background: var(--text-muted); box-shadow: 0 0 8px var(--text-muted); }
+.status-dot.syncing { background: var(--accent-pending); box-shadow: 0 0 8px var(--accent-pending); animation: pulse 1.5s infinite; }
+.status-dot.pending { background: var(--accent-pending); box-shadow: 0 0 8px var(--accent-pending); }
+.status-dot.error { background: var(--accent-danger); box-shadow: 0 0 8px var(--accent-danger); }
+
+.active-setup-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--accent-primary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  background: rgba(16, 185, 129, 0.08);
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.setup-badge {
+  white-space: nowrap;
+}
+
+.setup-divider {
+  color: rgba(16, 185, 129, 0.4);
+}
+
 
 /* New UI Classes */
 .flash-success .big-number {

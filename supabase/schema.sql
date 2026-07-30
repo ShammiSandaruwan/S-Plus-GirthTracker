@@ -323,11 +323,11 @@ CREATE TABLE census_measurements (
 
   -- Legacy uniqueness constraint (kept until field_id backfill complete)
   CONSTRAINT uq_tree_in_field
-    UNIQUE (estate, division, field_no, extent, tree_no)
+    UNIQUE (estate, division, field_no, extent, tree_no),
 
-  -- NOTE: After successful field_id backfill, apply:
-  -- ALTER TABLE census_measurements ALTER COLUMN field_id SET NOT NULL;
-  -- ALTER TABLE census_measurements ADD CONSTRAINT uq_field_tree UNIQUE (field_id, tree_no);
+  -- Canonical uniqueness constraint
+  CONSTRAINT uq_field_tree
+    UNIQUE (field_id, tree_no)
 );
 
 CREATE INDEX idx_cm_estate_field ON census_measurements (estate, field_no);
@@ -403,7 +403,7 @@ BEGIN
       tree_no, caliper_reading, girth, girth_cm, operator_name,
       session_id, device_id_hash, local_dexie_id, event_source
     ) VALUES (
-      OLD.id, 'delete', OLD.estate, OLD.division, OLD.field_no, OLD.extent,
+      NULL, 'delete', OLD.estate, OLD.division, OLD.field_no, OLD.extent,
       OLD.tree_no, OLD.caliper_reading, OLD.girth, OLD.girth_cm, OLD.operator_name,
       OLD.session_id, OLD.device_id_hash, OLD.local_dexie_id, 'undo'
     );
