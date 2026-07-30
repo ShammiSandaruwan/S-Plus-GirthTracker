@@ -1085,20 +1085,7 @@ function getFriendlySyncErrorMessage(errorObj) {
       )}
 
       <div className="glass-card">
-        <div className="active-setup-bar">
-          <span className="setup-badge">{settings.estate}</span>
-          <span className="setup-divider">•</span>
-          <span className="setup-badge">{settings.division}</span>
-          <span className="setup-divider">•</span>
-          <span className="setup-badge" style={{ fontWeight: 700 }}>{fieldDisplayName}</span>
-          {settings.extent && (
-            <>
-              <span className="setup-divider">•</span>
-              <span className="setup-badge">{settings.extent} Ha</span>
-            </>
-          )}
-        </div>
-        
+
         <div className="big-display">
           <div className="text-muted">Current Tree</div>
           <div className="tree-adjust-container">
