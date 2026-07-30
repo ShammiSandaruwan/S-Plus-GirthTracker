@@ -12,11 +12,14 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   try {
     const deviceId = req.headers.get('x-device-id');
     const deviceToken = req.headers.get('x-device-token');
 
     if (!deviceId || !deviceToken) {
+      console.warn(`[SYNC-DEBUG] [Req:${requestId}] Auth failed: missing device credentials. cause: invalid device | errorCode: AUTH_FAILED`);
       return new Response(JSON.stringify({ error: 'Missing device credentials', errorCode: 'AUTH_FAILED' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -32,6 +35,10 @@ serve(async (req) => {
     // Validate device credentials against Supabase approved_devices
     const authResult = await validateDeviceFromSupabase(deviceId, deviceToken, supabaseAdmin);
     if (!authResult.valid || !authResult.device) {
+      const cause = authResult.errorCode === 'DEVICE_REVOKED'
+        ? 'revoked device'
+        : (authResult.errorCode === 'DEVICE_INVALID' ? 'invalid device' : 'auth failed');
+      console.warn(`[SYNC-DEBUG] [Req:${requestId}] Auth rejected for deviceIdHash:${authResult.deviceIdHash?.substring(0, 10) || 'unknown'}. cause: ${cause} | errorCode: ${authResult.errorCode || 'AUTH_FAILED'} | error: ${authResult.error}`);
       return new Response(JSON.stringify({
         error: authResult.error || 'Device not approved.',
         errorType: authResult.errorType || 'auth_failed',
@@ -44,7 +51,7 @@ serve(async (req) => {
     // Resolve approved device's canonical estate identity
     const approvedEstate = await resolveCanonicalEstate(authResult.device.estate_code, supabaseAdmin);
     if (!approvedEstate) {
-      console.warn('[sync-measurements] Could not resolve device estate code:', authResult.device.estate_code);
+      console.warn(`[SYNC-DEBUG] [Req:${requestId}] Estate resolution failed for deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)} | estate_code:'${authResult.device.estate_code}'. cause: stale config | errorCode: AUTH_FAILED`);
       return new Response(JSON.stringify({
         error: 'Approved device estate could not be resolved.',
         errorCode: 'AUTH_FAILED'
@@ -54,7 +61,7 @@ serve(async (req) => {
     }
 
     const approvedEstateId = approvedEstate.id;
-    console.log('[sync-measurements] Authenticated device:', authResult.deviceIdHash?.substring(0, 10), 'Approved Estate:', approvedEstate.code, '(', approvedEstateId, ')');
+    console.log(`[SYNC-DEBUG] [Req:${requestId}] Authenticated deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)} | ApprovedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }`);
 
     if (!Array.isArray(measurements) || measurements.length === 0) {
       return new Response(JSON.stringify({ success: true, message: 'Empty batch', syncedIds: [] }), {
@@ -70,6 +77,9 @@ serve(async (req) => {
         const localId = m.id;
         let fieldId = m.fieldId || null;
         let fieldRow: any = null;
+        const usedCanonicalPath = !!m.fieldId;
+        const usedLegacyFallback = !m.fieldId && !!(m.division && m.fieldNo);
+        const lookupPath = usedCanonicalPath ? 'canonical' : (usedLegacyFallback ? 'legacy_fallback' : 'none');
 
         if (fieldId) {
           // Validate fieldId exists
@@ -80,7 +90,15 @@ serve(async (req) => {
             .maybeSingle();
 
           if (fieldErr || !field) {
-            console.warn('[sync-measurements] Field lookup failed for fieldId:', fieldId, fieldErr?.message);
+            console.warn(
+              `[SYNC-DEBUG] [Req:${requestId}] FIELD LOOKUP FAILED | localId:${localId} | deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)}` +
+              ` | approvedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }` +
+              ` | incomingFieldId:'${m.fieldId}' | usedCanonicalPath:${usedCanonicalPath} | usedLegacyFallback:${usedLegacyFallback} | lookupPath:'${lookupPath}'` +
+              ` | fieldLookupSuccess:false` +
+              ` | resolvedField: null` +
+              ` | cause: missing field | errorCode: FIELD_NOT_FOUND` +
+              ` | dbError: ${fieldErr?.message || 'Field not found by fieldId'}`
+            );
             errors.push({
               localId,
               errorCode: 'FIELD_NOT_FOUND',
@@ -100,7 +118,16 @@ serve(async (req) => {
             .maybeSingle();
 
           if (fallbackErr || !fallbackField) {
-            console.warn('[sync-measurements] Fallback lookup failed for division:', m.division, 'fieldNo:', m.fieldNo);
+            console.warn(
+              `[SYNC-DEBUG] [Req:${requestId}] FALLBACK LOOKUP FAILED | localId:${localId} | deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)}` +
+              ` | approvedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }` +
+              ` | incomingFieldId:null (division:'${m.division}', fieldNo:'${m.fieldNo}')` +
+              ` | usedCanonicalPath:${usedCanonicalPath} | usedLegacyFallback:${usedLegacyFallback} | lookupPath:'${lookupPath}'` +
+              ` | fieldLookupSuccess:false` +
+              ` | resolvedField: null` +
+              ` | cause: legacy fallback mismatch | errorCode: FIELD_NOT_FOUND` +
+              ` | dbError: ${fallbackErr?.message || 'Field not found in approved estate'}`
+            );
             errors.push({
               localId,
               errorCode: 'FIELD_NOT_FOUND',
@@ -113,6 +140,14 @@ serve(async (req) => {
         }
 
         if (!fieldRow) {
+          console.warn(
+            `[SYNC-DEBUG] [Req:${requestId}] MISSING FIELD SELECTION | localId:${localId} | deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)}` +
+            ` | approvedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }` +
+            ` | incomingFieldId:'${m.fieldId}' | usedCanonicalPath:${usedCanonicalPath} | usedLegacyFallback:${usedLegacyFallback} | lookupPath:'${lookupPath}'` +
+            ` | fieldLookupSuccess:false` +
+            ` | resolvedField: null` +
+            ` | cause: missing field | errorCode: VALIDATION_ERROR`
+          );
           errors.push({
             localId,
             errorCode: 'VALIDATION_ERROR',
@@ -122,7 +157,15 @@ serve(async (req) => {
         }
 
         if (!fieldRow.active) {
-          console.warn('[sync-measurements] Inactive field selected for localId:', localId, fieldRow.id);
+          console.warn(
+            `[SYNC-DEBUG] [Req:${requestId}] INACTIVE FIELD REJECTION | localId:${localId} | deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)}` +
+            ` | approvedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }` +
+            ` | incomingFieldId:'${m.fieldId}' | usedCanonicalPath:${usedCanonicalPath} | usedLegacyFallback:${usedLegacyFallback} | lookupPath:'${lookupPath}'` +
+            ` | fieldLookupSuccess:true` +
+            ` | resolvedField: { id:'${fieldRow.id}', estate_id:'${fieldRow.estate_id}', estateCode:'${fieldRow.estates?.code}', estateName:'${fieldRow.estates?.name}' }` +
+            ` | comparison: fieldRow.active is false` +
+            ` | cause: inactive field | errorCode: FIELD_INACTIVE`
+          );
           errors.push({
             localId,
             errorCode: 'FIELD_INACTIVE',
@@ -132,8 +175,17 @@ serve(async (req) => {
         }
 
         // Canonical Estate Comparison (UUID matching)
-        if (fieldRow.estate_id !== approvedEstateId) {
-          console.warn('[sync-measurements] Estate mismatch for localId:', localId, 'Field Estate:', fieldRow.estate_id, 'Device Estate:', approvedEstateId);
+        const estateMatch = fieldRow.estate_id === approvedEstateId;
+        if (!estateMatch) {
+          console.warn(
+            `[SYNC-DEBUG] [Req:${requestId}] ESTATE MISMATCH REJECTION | localId:${localId} | deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)}` +
+            ` | approvedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }` +
+            ` | incomingFieldId:'${m.fieldId}' | usedCanonicalPath:${usedCanonicalPath} | usedLegacyFallback:${usedLegacyFallback} | lookupPath:'${lookupPath}'` +
+            ` | fieldLookupSuccess:true` +
+            ` | resolvedField: { id:'${fieldRow.id}', estate_id:'${fieldRow.estate_id}', estateCode:'${fieldRow.estates?.code}', estateName:'${fieldRow.estates?.name}' }` +
+            ` | comparisonOutcome: field.estate_id ('${fieldRow.estate_id}') === approvedEstateId ('${approvedEstateId}') => ${estateMatch}` +
+            ` | cause: estate mismatch | errorCode: ESTATE_MISMATCH`
+          );
           errors.push({
             localId,
             errorCode: 'ESTATE_MISMATCH',
@@ -180,18 +232,26 @@ serve(async (req) => {
           .upsert(row, { onConflict: 'estate,division,field_no,extent,tree_no' });
 
         if (upsertError) {
-          console.error('[sync-measurements] Upsert failed for localId:', localId, upsertError.message);
+          console.error(
+            `[SYNC-DEBUG] [Req:${requestId}] DB UPSERT ERROR | localId:${localId} | deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)}` +
+            ` | approvedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }` +
+            ` | incomingFieldId:'${m.fieldId}' | usedCanonicalPath:${usedCanonicalPath} | usedLegacyFallback:${usedLegacyFallback} | lookupPath:'${lookupPath}'` +
+            ` | fieldLookupSuccess:true` +
+            ` | resolvedField: { id:'${fieldRow.id}', estate_id:'${fieldRow.estate_id}', estateCode:'${fieldRow.estates?.code}', estateName:'${fieldRow.estates?.name}' }` +
+            ` | cause: database upsert failure | errorCode: VALIDATION_ERROR` +
+            ` | error: ${upsertError.message}`
+          );
           errors.push({
             localId,
             errorCode: 'VALIDATION_ERROR',
             error: `Database error: ${upsertError.message}`
           });
         } else {
-          console.log('[sync-measurements] Synced localId:', localId, 'fieldId:', fieldRow.id);
+          console.log(`[SYNC-DEBUG] [Req:${requestId}] SYNC SUCCESS | localId:${localId} | fieldId:${fieldRow.id} | lookupPath:'${lookupPath}'`);
           syncedIds.push(localId);
         }
       } catch (mErr: any) {
-        console.error('[sync-measurements] Exception processing localId:', m.id, mErr.message);
+        console.error(`[SYNC-DEBUG] [Req:${requestId}] EXCEPTION | localId:${m.id} | error: ${mErr.message}`);
         errors.push({
           localId: m.id,
           errorCode: 'VALIDATION_ERROR',
@@ -213,10 +273,11 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err: any) {
-    console.error('[sync-measurements] Fatal handler error:', err.message);
+    console.error(`[SYNC-DEBUG] [Req:${requestId}] FATAL HANDLER ERROR | error: ${err.message}`);
     return new Response(JSON.stringify({ error: err.message, errorCode: 'SERVER_ERROR' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });
+
 

@@ -403,7 +403,7 @@ BEGIN
       tree_no, caliper_reading, girth, girth_cm, operator_name,
       session_id, device_id_hash, local_dexie_id, event_source
     ) VALUES (
-      OLD.id, 'delete', OLD.estate, OLD.division, OLD.field_no, OLD.extent,
+      NULL, 'delete', OLD.estate, OLD.division, OLD.field_no, OLD.extent,
       OLD.tree_no, OLD.caliper_reading, OLD.girth, OLD.girth_cm, OLD.operator_name,
       OLD.session_id, OLD.device_id_hash, OLD.local_dexie_id, 'undo'
     );
