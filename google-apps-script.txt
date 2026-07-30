@@ -185,8 +185,8 @@ function handleRequestAccess(parsed) {
 
   const inlineKeyboard = [
     [
-      { text: "✅ Approve", url: `${SUPABASE_APPROVE_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
-      { text: "❌ Deny", url: `${SUPABASE_APPROVE_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
+      { text: "✅ Approve", callback_data: `approve:${requestId}` },
+      { text: "❌ Deny", callback_data: `deny:${requestId}` }
     ]
   ];
 
