@@ -67,27 +67,55 @@ serve(async (req) => {
       event_data: { user_agent: userAgent, app_version: appVersion }
     });
 
-    // Send Telegram notification via GAS (notification only, not state management)
+    // Send Telegram notification directly
     let telegramStatus = 'not_sent';
-    if (gasUrl) {
-      try {
-        const telegramPayload = JSON.stringify({
-          action: 'send_telegram',
-          estate,
-          operatorName,
-          requestId,
-          gpsStatus: location?.status || 'unknown',
-          googleMapLink: location?.googleMapLink || null,
-        });
+    const telegramBotToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+    const telegramChatId = Deno.env.get('TELEGRAM_CHAT_ID');
 
-        const gasRes = await fetch(gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: telegramPayload,
-        });
-        const gasResult = await gasRes.json();
-        telegramStatus = gasResult.success ? 'sent' : 'failed';
-      } catch {
+    if (telegramBotToken && telegramChatId) {
+      try {
+        const text = `New GirthTracker Access Request\n\n` +
+                     `Estate: ${estate}\n` +
+                     `Operator Name: ${operatorName}\n` +
+                     `GPS Status: ${location?.status || 'unknown'}\n` +
+                     `Requested At: ${new Date().toISOString()}\n\n` +
+                     `Approve or deny this device.`;
+
+        const inlineKeyboard: any[] = [
+          [
+            { text: "✅ Approve", callback_data: `approve:${requestId}` },
+            { text: "❌ Deny", callback_data: `deny:${requestId}` }
+          ]
+        ];
+
+        if (location?.googleMapLink) {
+          inlineKeyboard.push([
+            { text: "📍 Open Location", url: location.googleMapLink }
+          ]);
+        }
+
+        const chatIds = telegramChatId.split(',').map(s => s.trim()).filter(Boolean);
+        
+        for (const id of chatIds) {
+          const res = await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: id,
+              text: text,
+              reply_markup: { inline_keyboard: inlineKeyboard }
+            }),
+          });
+          const result = await res.json();
+          if (!result.ok) {
+            console.error(`Telegram send failed to ${id}:`, result);
+            telegramStatus = 'failed';
+          } else {
+            telegramStatus = telegramStatus === 'not_sent' ? 'sent' : telegramStatus;
+          }
+        }
+      } catch (e: any) {
+        console.error('Telegram error:', e.message);
         telegramStatus = 'failed';
       }
     }
