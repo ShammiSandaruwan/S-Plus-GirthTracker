@@ -66,15 +66,68 @@ export async function verifyGasHmac(
 }
 
 /**
+ * Helper to resolve an estate identifier (UUID, code, or name) to a canonical estate row from DB.
+ */
+export async function resolveCanonicalEstate(
+  estateRef: string | null | undefined,
+  supabaseAdmin: ReturnType<typeof createClient>
+): Promise<{ id: string; code: string; name: string } | null> {
+  if (!estateRef) return null;
+  const trimmed = estateRef.trim();
+  if (!trimmed) return null;
+
+  // 1. Check if trimmed string is a valid UUID
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+  if (isUuid) {
+    const { data } = await supabaseAdmin
+      .from('estates')
+      .select('id, code, name')
+      .eq('id', trimmed)
+      .maybeSingle();
+    if (data) return data;
+  }
+
+  // 2. Lookup by code (case-insensitive)
+  const { data: byCode } = await supabaseAdmin
+    .from('estates')
+    .select('id, code, name')
+    .ilike('code', trimmed)
+    .maybeSingle();
+  if (byCode) return byCode;
+
+  // 3. Lookup by name (case-insensitive)
+  const { data: byName } = await supabaseAdmin
+    .from('estates')
+    .select('id, code, name')
+    .ilike('name', trimmed)
+    .maybeSingle();
+  if (byName) return byName;
+
+  return null;
+}
+
+/**
  * Validate a device against Supabase approved_devices table.
- * Returns { valid, deviceIdHash?, error?, errorType? }
+ * Supports both:
+ *   validateDeviceFromSupabase(deviceId, deviceToken, supabaseAdmin)
+ *   validateDeviceFromSupabase(deviceId, deviceToken, estate, supabaseAdmin)
+ * Returns { valid, deviceIdHash?, device?, error?, errorType?, errorCode? }
  */
 export async function validateDeviceFromSupabase(
   deviceId: string,
   deviceToken: string,
-  estate: string,
-  supabaseAdmin: ReturnType<typeof createClient>
-): Promise<{ valid: boolean; deviceIdHash?: string; error?: string; errorType?: string }> {
+  estateOrAdmin: string | ReturnType<typeof createClient>,
+  supabaseAdminParam?: ReturnType<typeof createClient>
+): Promise<{
+  valid: boolean;
+  deviceIdHash?: string;
+  device?: any;
+  error?: string;
+  errorType?: string;
+  errorCode?: string;
+}> {
+  const supabaseAdmin = typeof estateOrAdmin === 'string' ? supabaseAdminParam! : estateOrAdmin;
+
   // Hash the device ID and token
   const encoder = new TextEncoder();
 
@@ -94,23 +147,19 @@ export async function validateDeviceFromSupabase(
     .single();
 
   if (error || !device) {
-    return { valid: false, error: 'Device not approved.', errorType: 'auth_failed' };
+    return { valid: false, error: 'Device not approved.', errorType: 'auth_failed', errorCode: 'DEVICE_INVALID' };
   }
 
   if (device.revoked) {
-    return { valid: false, error: 'Device revoked.', errorType: 'auth_failed' };
+    return { valid: false, error: 'Device revoked.', errorType: 'auth_failed', errorCode: 'DEVICE_REVOKED' };
   }
 
   if (device.expires_at && new Date(device.expires_at) < new Date()) {
-    return { valid: false, error: 'Access expired. Please contact administrator.', errorType: 'subscription_expired' };
+    return { valid: false, error: 'Access expired. Please contact administrator.', errorType: 'subscription_expired', errorCode: 'AUTH_FAILED' };
   }
 
   if (device.token_hash !== tokenHash) {
-    return { valid: false, error: 'Invalid token.', errorType: 'auth_failed' };
-  }
-
-  if (device.estate_code !== estate) {
-    return { valid: false, error: 'Estate mismatch.', errorType: 'auth_failed' };
+    return { valid: false, error: 'Invalid token.', errorType: 'auth_failed', errorCode: 'AUTH_FAILED' };
   }
 
   // Update last_seen_at
@@ -119,5 +168,6 @@ export async function validateDeviceFromSupabase(
     .update({ last_seen_at: new Date().toISOString() })
     .eq('device_id_hash', idHash);
 
-  return { valid: true, deviceIdHash: idHash };
+  return { valid: true, deviceIdHash: idHash, device };
 }
+

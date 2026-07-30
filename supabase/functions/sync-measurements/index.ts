@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { validateDeviceFromSupabase } from "../_shared/auth.ts";
+import { validateDeviceFromSupabase, resolveCanonicalEstate } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,7 +17,7 @@ serve(async (req) => {
     const deviceToken = req.headers.get('x-device-token');
 
     if (!deviceId || !deviceToken) {
-      return new Response(JSON.stringify({ error: 'Missing device credentials' }), {
+      return new Response(JSON.stringify({ error: 'Missing device credentials', errorCode: 'AUTH_FAILED' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -27,26 +27,37 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     );
 
-    const { estate, operatorName, measurements } = await req.json();
+    const { operatorName, measurements } = await req.json();
 
-    if (!estate) {
-      return new Response(JSON.stringify({ error: 'Estate is required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Validate device directly against Supabase approved_devices
-    const authResult = await validateDeviceFromSupabase(deviceId, deviceToken, estate, supabaseAdmin);
-    if (!authResult.valid) {
+    // Validate device credentials against Supabase approved_devices
+    const authResult = await validateDeviceFromSupabase(deviceId, deviceToken, supabaseAdmin);
+    if (!authResult.valid || !authResult.device) {
       return new Response(JSON.stringify({
-        error: authResult.error, errorType: authResult.errorType
+        error: authResult.error || 'Device not approved.',
+        errorType: authResult.errorType || 'auth_failed',
+        errorCode: authResult.errorCode || 'AUTH_FAILED'
       }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    // Resolve approved device's canonical estate identity
+    const approvedEstate = await resolveCanonicalEstate(authResult.device.estate_code, supabaseAdmin);
+    if (!approvedEstate) {
+      console.warn('[sync-measurements] Could not resolve device estate code:', authResult.device.estate_code);
+      return new Response(JSON.stringify({
+        error: 'Approved device estate could not be resolved.',
+        errorCode: 'AUTH_FAILED'
+      }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const approvedEstateId = approvedEstate.id;
+    console.log('[sync-measurements] Authenticated device:', authResult.deviceIdHash?.substring(0, 10), 'Approved Estate:', approvedEstate.code, '(', approvedEstateId, ')');
+
     if (!Array.isArray(measurements) || measurements.length === 0) {
-      return new Response(JSON.stringify({ success: true, message: 'Empty batch' }), {
+      return new Response(JSON.stringify({ success: true, message: 'Empty batch', syncedIds: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -56,58 +67,86 @@ serve(async (req) => {
 
     for (const m of measurements) {
       try {
-        // Resolve field_id if provided
+        const localId = m.id;
         let fieldId = m.fieldId || null;
-        let resolvedExtent = m.extent;
-        let resolvedEstate = estate;
-        let resolvedDivision = m.division;
-        let resolvedFieldNo = m.fieldNo;
-
-        if (!fieldId && estate && m.division && m.fieldNo) {
-          // Attempt to lookup fieldId
-          const { data: foundField } = await supabaseAdmin
-            .from('fields')
-            .select('id, estate_id, division_id, field_code, extent_ha, active, estates!inner(code), divisions!inner(code)')
-            .eq('estates.code', estate)
-            .eq('divisions.code', m.division)
-            .eq('field_code', m.fieldNo)
-            .single();
-            
-          if (foundField && foundField.active) {
-            fieldId = foundField.id;
-          }
-        }
+        let fieldRow: any = null;
 
         if (fieldId) {
-          // Validate field_id exists and is active
+          // Validate fieldId exists
           const { data: field, error: fieldErr } = await supabaseAdmin
             .from('fields')
-            .select('id, estate_id, division_id, field_code, extent_ha, active, estates(code), divisions(code)')
+            .select('id, estate_id, division_id, field_code, extent_ha, active, estates!inner(id, code, name), divisions!inner(id, code, name)')
             .eq('id', fieldId)
-            .single();
+            .maybeSingle();
 
           if (fieldErr || !field) {
-            errors.push({ localId: m.id, error: fieldErr ? `Field lookup error: ${fieldErr.message}` : 'Invalid field_id' });
+            console.warn('[sync-measurements] Field lookup failed for fieldId:', fieldId, fieldErr?.message);
+            errors.push({
+              localId,
+              errorCode: 'FIELD_NOT_FOUND',
+              error: fieldErr ? `Field lookup error: ${fieldErr.message}` : 'Invalid or non-existent field_id'
+            });
             continue;
           }
+          fieldRow = field;
+        } else if (m.division && m.fieldNo) {
+          // Legacy fallback: attempt to lookup field in approved estate by division code & field_code
+          const { data: fallbackField, error: fallbackErr } = await supabaseAdmin
+            .from('fields')
+            .select('id, estate_id, division_id, field_code, extent_ha, active, estates!inner(id, code, name), divisions!inner(id, code, name)')
+            .eq('estate_id', approvedEstateId)
+            .eq('divisions.code', m.division)
+            .eq('field_code', m.fieldNo)
+            .maybeSingle();
 
-          if (!field.active) {
-            errors.push({ localId: m.id, error: 'Field is inactive' });
+          if (fallbackErr || !fallbackField) {
+            console.warn('[sync-measurements] Fallback lookup failed for division:', m.division, 'fieldNo:', m.fieldNo);
+            errors.push({
+              localId,
+              errorCode: 'FIELD_NOT_FOUND',
+              error: 'Field not found in approved estate for division/field_code'
+            });
             continue;
           }
-
-          // Resolve canonical values from field config
-          resolvedEstate = (field as any).estates?.code || estate;
-          resolvedDivision = (field as any).divisions?.code || m.division;
-          resolvedFieldNo = field.field_code;
-          resolvedExtent = field.extent_ha;
-
-          // Verify estate match
-          if (resolvedEstate.toLowerCase() !== estate.toLowerCase()) {
-            errors.push({ localId: m.id, error: 'Field does not belong to this estate' });
-            continue;
-          }
+          fieldRow = fallbackField;
+          fieldId = fallbackField.id;
         }
+
+        if (!fieldRow) {
+          errors.push({
+            localId,
+            errorCode: 'VALIDATION_ERROR',
+            error: 'Missing fieldId or valid field selection'
+          });
+          continue;
+        }
+
+        if (!fieldRow.active) {
+          console.warn('[sync-measurements] Inactive field selected for localId:', localId, fieldRow.id);
+          errors.push({
+            localId,
+            errorCode: 'FIELD_INACTIVE',
+            error: 'Field is inactive'
+          });
+          continue;
+        }
+
+        // Canonical Estate Comparison (UUID matching)
+        if (fieldRow.estate_id !== approvedEstateId) {
+          console.warn('[sync-measurements] Estate mismatch for localId:', localId, 'Field Estate:', fieldRow.estate_id, 'Device Estate:', approvedEstateId);
+          errors.push({
+            localId,
+            errorCode: 'ESTATE_MISMATCH',
+            error: 'Field does not belong to this estate'
+          });
+          continue;
+        }
+
+        // Derive authoritative location details from DB record only
+        const resolvedEstate = fieldRow.estates?.code || approvedEstate.code;
+        const resolvedDivision = fieldRow.divisions?.code || m.division;
+        const resolvedFieldNo = fieldRow.field_code;
+        const resolvedExtent = fieldRow.extent_ha;
 
         const row = {
           estate: resolvedEstate,
@@ -115,7 +154,7 @@ serve(async (req) => {
           field_no: resolvedFieldNo,
           extent: resolvedExtent,
           tree_no: m.treeNo,
-          field_id: fieldId,
+          field_id: fieldRow.id,
           extent_at_measurement: resolvedExtent,
           caliper_reading: m.caliperReading,
           girth: m.girth,
@@ -129,7 +168,7 @@ serve(async (req) => {
           gps_accuracy: m.gpsAccuracy || null,
           gps_status: m.gpsStatus || null,
           google_map_link: m.googleMapLink || null,
-          operator_name: operatorName || m.operatorName,
+          operator_name: operatorName || m.operatorName || authResult.device.operator_name,
           session_id: m.sessionId || null,
           device_id_hash: authResult.deviceIdHash,
           measured_at: m.timestamp || new Date().toISOString(),
@@ -141,12 +180,23 @@ serve(async (req) => {
           .upsert(row, { onConflict: 'estate,division,field_no,extent,tree_no' });
 
         if (upsertError) {
-          errors.push({ localId: m.id, error: upsertError.message });
+          console.error('[sync-measurements] Upsert failed for localId:', localId, upsertError.message);
+          errors.push({
+            localId,
+            errorCode: 'VALIDATION_ERROR',
+            error: `Database error: ${upsertError.message}`
+          });
         } else {
-          syncedIds.push(m.id);
+          console.log('[sync-measurements] Synced localId:', localId, 'fieldId:', fieldRow.id);
+          syncedIds.push(localId);
         }
       } catch (mErr: any) {
-        errors.push({ localId: m.id, error: mErr.message });
+        console.error('[sync-measurements] Exception processing localId:', m.id, mErr.message);
+        errors.push({
+          localId: m.id,
+          errorCode: 'VALIDATION_ERROR',
+          error: mErr.message || 'Unexpected sync error'
+        });
       }
     }
 
@@ -163,8 +213,10 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('[sync-measurements] Fatal handler error:', err.message);
+    return new Response(JSON.stringify({ error: err.message, errorCode: 'SERVER_ERROR' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });
+

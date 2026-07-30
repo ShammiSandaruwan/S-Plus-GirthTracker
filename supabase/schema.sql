@@ -176,6 +176,7 @@ CREATE TABLE approved_devices (
   device_id_hash   TEXT NOT NULL UNIQUE,
   token_hash       TEXT NOT NULL,
   estate_code      TEXT NOT NULL,
+  estate_id        UUID REFERENCES estates(id),
   operator_name    TEXT NOT NULL,
   approved_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at       TIMESTAMPTZ,

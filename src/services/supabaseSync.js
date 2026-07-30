@@ -20,13 +20,12 @@ export async function syncToSupabase(pendingMeasurements, deviceId, deviceToken,
 
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('auth_failed');
-    }
-    throw new Error(result.error || result.message || 'Failed to sync with Supabase');
+    const err = new Error(result.error || result.message || 'Failed to sync with Supabase');
+    err.errorCode = result.errorCode || result.errorType || (response.status === 401 || response.status === 403 ? 'AUTH_FAILED' : 'SYNC_ERROR');
+    throw err;
   }
 
-  return result; // { success: true, syncedIds: [...] }
+  return result; // { success: true, syncedIds: [...], errors: [...] }
 }
 
 export async function undoFromSupabase(measurement, deviceId, deviceToken, operatorName) {

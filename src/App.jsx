@@ -351,6 +351,31 @@ function TrackerApp({ approvedData }) {
     }
   }, [isSetupComplete]);
 
+function getFriendlySyncErrorMessage(errorObj) {
+  if (!errorObj) return 'Sync failed';
+  if (typeof errorObj === 'string') return errorObj;
+  const code = errorObj.errorCode || errorObj.errorType;
+  const msg = errorObj.error || errorObj.message;
+
+  switch (code) {
+    case 'ESTATE_MISMATCH':
+      return 'Selected field does not match the approved estate. Please reselect the field or contact admin.';
+    case 'STALE_CONFIG':
+      return 'Field configuration is outdated. Please refresh field configuration and retry.';
+    case 'FIELD_NOT_FOUND':
+      return 'Selected field was not found in database. Please check field setup.';
+    case 'FIELD_INACTIVE':
+      return 'Selected field is currently inactive. Please contact administrator.';
+    case 'DEVICE_REVOKED':
+    case 'AUTH_FAILED':
+    case 'DEVICE_INVALID':
+      return 'Access approval required or device access was revoked. Please check access approval.';
+    case 'VALIDATION_ERROR':
+    default:
+      return msg ? `${msg}` : 'Sync failed due to validation error.';
+  }
+}
+
   const syncPending = useCallback(async () => {
     if (!isOnline || isSyncingRef.current || authError) return;
     
@@ -393,21 +418,27 @@ function TrackerApp({ approvedData }) {
              if (result.errors && result.errors.length > 0) {
                const failedIds = result.errors.map(e => e.localId);
                await db.measurements.where('id').anyOf(failedIds).modify({ syncStatus: 'failed' });
-               const firstError = result.errors[0].error;
-               setSyncError(`Sync partially failed. First error: ${firstError}`);
+               const firstError = result.errors[0];
+               const friendlyMsg = getFriendlySyncErrorMessage(firstError);
+               if (firstError.errorCode === 'DEVICE_REVOKED' || firstError.errorCode === 'AUTH_FAILED' || firstError.errorCode === 'DEVICE_INVALID') {
+                 setAuthError(friendlyMsg);
+               } else {
+                 setSyncError(`Sync partially failed: ${friendlyMsg}`);
+               }
              } else {
                setSyncError('');
              }
              setAuthError('');
            }
          } catch (err) {
-           if (err.message.includes('Device validation failed') || err.message.includes('auth_failed')) {
-             setAuthError('Access approval required.');
+           const code = err.errorCode || '';
+           if (code === 'DEVICE_REVOKED' || code === 'AUTH_FAILED' || code === 'DEVICE_INVALID' || err.message.includes('auth_failed')) {
+             setAuthError(getFriendlySyncErrorMessage({ errorCode: code || 'AUTH_FAILED', error: err.message }));
              break;
            } else {
              const ids = batch.map(p => p.id);
              await db.measurements.where('id').anyOf(ids).modify({ syncStatus: 'failed' });
-             setSyncError(`Sync error: ${err.message}`);
+             setSyncError(`Sync error: ${getFriendlySyncErrorMessage({ errorCode: code, error: err.message })}`);
            }
          }
       }
