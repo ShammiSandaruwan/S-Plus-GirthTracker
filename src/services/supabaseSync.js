@@ -59,8 +59,17 @@ export async function undoFromSupabase(measurement, deviceId, deviceToken, opera
   return result;
 }
 
-export async function checkDuplicateInDexie(estate, division, fieldNo, extent, treeNo) {
+export async function checkDuplicateInDexie(fieldId, estate, division, fieldNo, extent, treeNo) {
   // Check dexie for local duplicate
+  if (fieldId) {
+    const duplicates = await db.measurements
+      .where('[fieldId+treeNo]')
+      .equals([fieldId, parseInt(treeNo)])
+      .toArray();
+    if (duplicates.length > 0) return duplicates[0];
+  }
+  
+  // Legacy fallback if fieldId is not present
   const duplicates = await db.measurements
     .where('[estate+division+fieldNo+extent+treeNo]')
     .equals([estate, division, fieldNo, parseFloat(extent), parseInt(treeNo)])

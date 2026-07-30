@@ -323,11 +323,11 @@ CREATE TABLE census_measurements (
 
   -- Legacy uniqueness constraint (kept until field_id backfill complete)
   CONSTRAINT uq_tree_in_field
-    UNIQUE (estate, division, field_no, extent, tree_no)
+    UNIQUE (estate, division, field_no, extent, tree_no),
 
-  -- NOTE: After successful field_id backfill, apply:
-  -- ALTER TABLE census_measurements ALTER COLUMN field_id SET NOT NULL;
-  -- ALTER TABLE census_measurements ADD CONSTRAINT uq_field_tree UNIQUE (field_id, tree_no);
+  -- Canonical uniqueness constraint
+  CONSTRAINT uq_field_tree
+    UNIQUE (field_id, tree_no)
 );
 
 CREATE INDEX idx_cm_estate_field ON census_measurements (estate, field_no);

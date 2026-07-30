@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bluetooth, Save, Settings2, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3, X } from 'lucide-react';
+import { Save, Settings2, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3, X } from 'lucide-react';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING } from './utils';
@@ -370,6 +370,8 @@ function getFriendlySyncErrorMessage(errorObj) {
     case 'AUTH_FAILED':
     case 'DEVICE_INVALID':
       return 'Access approval required or device access was revoked. Please check access approval.';
+    case 'DUPLICATE_TREE_NUMBER':
+      return msg ? `${msg}` : 'Tree number already exists in this field.';
     case 'VALIDATION_ERROR':
     default:
       return msg ? `${msg}` : 'Sync failed due to validation error.';
@@ -501,20 +503,21 @@ function getFriendlySyncErrorMessage(errorObj) {
 
     const loc = ENABLE_GPS_TAGGING ? getLastKnownLocation() : { latitude: null, longitude: null, accuracy: null, status: 'unavailable', googleMapLink: null };
 
-    const duplicate = await checkDuplicateInDexie(
-      currentSettings.estate,
-      currentSettings.division,
-      currentSettings.fieldNo,
-      currentSettings.extent,
-      currentSettings.treeNo
-    );
-
     // Look up fieldId from config
     let fieldId = null;
     if (configFields.length > 0) {
        const f = configFields.find(fld => fld.field_code === currentSettings.fieldNo);
        if (f) fieldId = f.id;
     }
+
+    const duplicate = await checkDuplicateInDexie(
+      fieldId,
+      currentSettings.estate,
+      currentSettings.division,
+      currentSettings.fieldNo,
+      currentSettings.extent,
+      currentSettings.treeNo
+    );
 
     if (duplicate) {
       if (!window.confirm(`Tree #${currentSettings.treeNo} has already been measured in this field (${duplicate.girth}"). Do you want to overwrite it?`)) {
@@ -974,6 +977,29 @@ function getFriendlySyncErrorMessage(errorObj) {
     );
   }
 
+  const getSyncStatusText = () => {
+    if (!SUPABASE_URL || SUPABASE_URL.includes('your-project.supabase.co')) return 'Config Missing';
+    if (authError) return 'Access Revoked';
+    if (!isOnline) return 'Offline';
+    if (syncing) return 'Syncing...';
+    if (syncError) return 'Sync Error';
+    if (pendingCount > 0) return `${pendingCount} Pending`;
+    return 'Synced';
+  };
+
+  const getSyncStatusDotClass = () => {
+    if (!SUPABASE_URL || SUPABASE_URL.includes('your-project.supabase.co') || authError) return 'status-dot error';
+    if (!isOnline) return 'status-dot offline';
+    if (syncing) return 'status-dot syncing';
+    if (syncError) return 'status-dot error';
+    if (pendingCount > 0) return 'status-dot pending';
+    return 'status-dot online';
+  };
+
+  const selectedFieldObj = configFields.find(f => f.field_code === settings.fieldNo);
+  const fieldDisplayName = selectedFieldObj?.display_name || settings.fieldNo;
+  const compactContext = `${settings.estate} • ${settings.division} • ${fieldDisplayName}`;
+
   return (
     <div className={`app-container ${successFlash ? 'flash-success' : ''}`}>
       <div className="glass-card" style={{padding: '1rem 1.5rem', marginBottom: '1rem'}}>
@@ -983,7 +1009,7 @@ function getFriendlySyncErrorMessage(errorObj) {
               <img src="/logo.png" alt="GirthTracker" className="app-logo" /> GirthTracker
             </h1>
             <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
-              {settings.estate} | F: {settings.fieldNo}
+              {compactContext}
             </div>
           </div>
           <div className="connection-status">
@@ -996,11 +1022,9 @@ function getFriendlySyncErrorMessage(errorObj) {
                 <Download size={14} /> <span className="header-action-label">Install</span>
               </button>
             )}
-            {isOnline ? (
-              <><span className="status-dot online"></span> <Wifi size={14} /> <span className="header-action-label">Online</span></>
-            ) : (
-              <><span className="status-dot offline"></span> <WifiOff size={14} /> <span className="header-action-label">Offline</span></>
-            )}
+            <span className={getSyncStatusDotClass()}></span>
+            {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+            <span className="header-action-label">{getSyncStatusText()}</span>
             <button 
               onClick={forceRefresh}
               className={`btn ${refreshConfirm ? 'btn-danger' : 'btn-secondary'}`}
@@ -1061,9 +1085,18 @@ function getFriendlySyncErrorMessage(errorObj) {
       )}
 
       <div className="glass-card">
-        <div className="bluetooth-indicator">
-          <Bluetooth size={18} className="pulse" />
-          Ready for Caliper Input
+        <div className="active-setup-bar">
+          <span className="setup-badge">{settings.estate}</span>
+          <span className="setup-divider">•</span>
+          <span className="setup-badge">{settings.division}</span>
+          <span className="setup-divider">•</span>
+          <span className="setup-badge" style={{ fontWeight: 700 }}>{fieldDisplayName}</span>
+          {settings.extent && (
+            <>
+              <span className="setup-divider">•</span>
+              <span className="setup-badge">{settings.extent} Ha</span>
+            </>
+          )}
         </div>
         
         <div className="big-display">
