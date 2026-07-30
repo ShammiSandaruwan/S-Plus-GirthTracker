@@ -185,8 +185,8 @@ function handleRequestAccess(parsed) {
 
   const inlineKeyboard = [
     [
-      { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
-      { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
+      { text: "✅ Approve", url: `${SUPABASE_APPROVE_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
+      { text: "❌ Deny", url: `${SUPABASE_APPROVE_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
     ]
   ];
 
@@ -516,8 +516,8 @@ function handleSendTelegram(parsed) {
 
   const inlineKeyboard = [
     [
-      { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
-      { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
+      { text: "✅ Approve", url: `${SUPABASE_APPROVE_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
+      { text: "❌ Deny", url: `${SUPABASE_APPROVE_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
     ]
   ];
 
