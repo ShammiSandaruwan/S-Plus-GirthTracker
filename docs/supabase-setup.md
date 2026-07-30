@@ -20,11 +20,13 @@ Deploy all required edge functions to your project:
 supabase functions deploy fetch-config --no-verify-jwt
 supabase functions deploy request-access --no-verify-jwt
 supabase functions deploy check-access --no-verify-jwt
-supabase functions deploy approve-device
-supabase functions deploy admin-config
-supabase functions deploy sync-measurements
-supabase functions deploy undo-measurement
-supabase functions deploy export-field
+supabase functions deploy approve-device --no-verify-jwt
+supabase functions deploy admin-config --no-verify-jwt
+supabase functions deploy sync-measurements --no-verify-jwt
+supabase functions deploy undo-measurement --no-verify-jwt
+supabase functions deploy export-field --no-verify-jwt
+supabase functions deploy admin-auth --no-verify-jwt
+supabase functions deploy admin-fetch --no-verify-jwt
 ```
 
 ## 3. Environment Secrets

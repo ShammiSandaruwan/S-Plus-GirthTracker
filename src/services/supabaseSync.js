@@ -20,7 +20,12 @@ export async function syncToSupabase(pendingMeasurements, deviceId, deviceToken,
 
   const result = await response.json();
   if (!response.ok) {
-    throw new Error(result.error || 'Failed to sync with Supabase');
+    if (response.status === 401 || response.status === 403) {
+      const err = new Error(result.error || result.message || 'Device validation failed');
+      err.auth_failed = true;
+      throw err;
+    }
+    throw new Error(result.error || result.message || 'Failed to sync with Supabase');
   }
 
   return result; // { success: true, syncedIds: [...] }
@@ -48,7 +53,7 @@ export async function undoFromSupabase(measurement, deviceId, deviceToken, opera
 
   const result = await response.json();
   if (!response.ok) {
-    throw new Error(result.error || 'Failed to undo measurement from Supabase');
+    throw new Error(result.error || result.message || 'Failed to undo measurement from Supabase');
   }
 
   return result;

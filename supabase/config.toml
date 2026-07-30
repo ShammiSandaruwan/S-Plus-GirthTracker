@@ -1,44 +1,32 @@
-
-[functions.webhook-audit]
-enabled = true
-verify_jwt = true
-import_map = "./functions/webhook-audit/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/webhook-audit/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/webhook-audit/*.html" ]
-
-[functions.audit-runner]
-enabled = true
-verify_jwt = true
-import_map = "./functions/audit-runner/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/audit-runner/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/audit-runner/*.html" ]
-
-[functions.schema-updater]
-enabled = true
-verify_jwt = true
-import_map = "./functions/schema-updater/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/schema-updater/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/schema-updater/*.html" ]
+project_id = "default"
 
 [functions.admin-auth]
-enabled = true
-verify_jwt = true
-import_map = "./functions/admin-auth/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/admin-auth/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/admin-auth/*.html" ]
+verify_jwt = false
+
+[functions.admin-config]
+verify_jwt = false
+
+[functions.admin-fetch]
+verify_jwt = false
+
+[functions.approve-device]
+verify_jwt = false
+
+[functions.check-access]
+verify_jwt = false
+
+[functions.export-field]
+verify_jwt = false
+
+[functions.fetch-config]
+verify_jwt = false
+
+[functions.request-access]
+verify_jwt = false
+
+[functions.sync-measurements]
+verify_jwt = false
+
+[functions.undo-measurement]
+verify_jwt = false
+
