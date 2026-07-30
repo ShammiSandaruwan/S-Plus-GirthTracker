@@ -1,10 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyGasHmac } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-gas-signature, x-gas-timestamp, x-gas-nonce, x-admin-token',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-admin-token, x-telegram-bot-api-secret-token',
 };
 
 serve(async (req) => {
@@ -13,142 +12,155 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') || '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    const telegramSecret = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') || '';
 
-    let action, requestId, body, isAdminKeyValid = false;
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Supabase environment variables missing');
+    }
 
-    if (req.method === 'GET') {
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    let action, requestId, performedBy;
+    const isGet = req.method === 'GET';
+
+    if (isGet) {
+      // Legacy Web Approval (GET) - e.g. clicking link from email/telegram directly
       const url = new URL(req.url);
       action = url.searchParams.get('action');
       requestId = url.searchParams.get('requestId');
       const adminKey = url.searchParams.get('adminKey');
       
       const expectedAdminKey = Deno.env.get('ADMIN_APPROVAL_KEY');
-      if (!expectedAdminKey) {
-        return respondHtml('Configuration error: ADMIN_APPROVAL_KEY not set in Supabase', false);
-      }
-      if (adminKey !== expectedAdminKey) {
+      if (!expectedAdminKey || adminKey !== expectedAdminKey) {
         return respondHtml('Invalid admin key', false);
       }
-      isAdminKeyValid = true;
-      body = { performedBy: 'telegram_admin' };
+      performedBy = 'web_admin_link';
     } else {
       const bodyText = await req.text();
-      body = JSON.parse(bodyText);
+      let body;
+      try { body = JSON.parse(bodyText); } catch { body = {}; }
 
-      // --- TELEGRAM WEBHOOK HANDLING ---
-    if (body.callback_query) {
-      const callbackQuery = body.callback_query;
-      const data = callbackQuery.data; // e.g. "approve:REQ-123"
-      const chatId = callbackQuery.message?.chat?.id;
-      const messageId = callbackQuery.message?.message_id;
-
-      if (data && (data.startsWith('approve:') || data.startsWith('deny:'))) {
-        const [cbAction, cbRequestId] = data.split(':');
-        
-        let resultMessage = '';
-        try {
-          if (cbAction === 'approve') {
-            const res = await handleApprove(cbRequestId, { performedBy: `telegram_admin` }, supabaseAdmin);
-            const resData = await res.json();
-            resultMessage = resData.success ? '✅ Device Approved!' : `❌ Error: ${resData.error}`;
-          } else {
-            const res = await handleDeny(cbRequestId, { performedBy: `telegram_admin` }, supabaseAdmin);
-            const resData = await res.json();
-            resultMessage = resData.success ? '❌ Device Denied.' : `❌ Error: ${resData.error}`;
-          }
-        } catch (e: any) {
-          resultMessage = `Error: ${e.message}`;
+      // --- 1. TELEGRAM WEBHOOK HANDLING ---
+      const teleSecretHeader = req.headers.get('X-Telegram-Bot-Api-Secret-Token');
+      if (teleSecretHeader) {
+        if (!telegramSecret || teleSecretHeader !== telegramSecret) {
+          return new Response('Unauthorized Webhook', { status: 403 });
         }
 
-        const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
-        if (botToken) {
-          // 1. Answer the callback query to show a toast and stop the loading spinner
-          await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              callback_query_id: callbackQuery.id,
-              text: resultMessage,
-              show_alert: true
-            })
-          });
+        if (body.callback_query) {
+          const callbackQuery = body.callback_query;
+          const data = callbackQuery.data; // e.g. "approve:REQ-123"
+          const chatId = callbackQuery.message?.chat?.id;
+          const messageId = callbackQuery.message?.message_id;
 
-          // 2. Edit the original message to remove buttons and append status
-          if (chatId && messageId && callbackQuery.message.text) {
-            await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: chatId,
-                message_id: messageId,
-                text: `${callbackQuery.message.text}\n\nStatus: ${resultMessage}`
-              })
+          if (data && (data.startsWith('approve:') || data.startsWith('deny:'))) {
+            const [cbAction, cbRequestId] = data.split(':');
+            
+            // Execute Atomic RPC
+            const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('process_telegram_approval', {
+              p_request_id: cbRequestId,
+              p_action: cbAction,
+              p_admin_identifier: `telegram_chat_${chatId}`
             });
+
+            let resultMessage = '';
+            if (rpcError) {
+              resultMessage = `❌ Error: ${rpcError.message}`;
+            } else if (!rpcResult.success) {
+              resultMessage = `❌ Error: ${rpcResult.error}`;
+            } else {
+              resultMessage = cbAction === 'approve' ? '✅ Device Approved!' : '❌ Device Denied.';
+            }
+
+            const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+            if (botToken) {
+              // 1. Answer the callback query to show a toast
+              await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callback_query_id: callbackQuery.id, text: resultMessage, show_alert: true })
+              });
+
+              // 2. Edit the original message to remove buttons and append status
+              if (chatId && messageId && callbackQuery.message.text) {
+                await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: chatId,
+                    message_id: messageId,
+                    text: `${callbackQuery.message.text}\n\nStatus: ${resultMessage}`
+                  })
+                });
+              }
+            }
           }
         }
-        return new Response('OK');
+        return new Response('OK'); // Always return OK to Telegram
       }
-    }
-    // --- END TELEGRAM WEBHOOK HANDLING ---
+      // --- END TELEGRAM WEBHOOK HANDLING ---
 
-    action = body.action;
-    requestId = body.requestId;
-
-    // Determine auth method: HMAC (from GAS Telegram callback) or admin token (from /mod)
-    const hasHmac = req.headers.get('x-gas-signature');
-    const adminToken = req.headers.get('x-admin-token');
-
-    if (hasHmac) {
-      // HMAC verification for GAS → Edge Function calls
-      const hmacResult = await verifyGasHmac(req, bodyText, supabaseAdmin);
-      if (!hmacResult.valid) {
-        return new Response(JSON.stringify({ error: hmacResult.error }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+      // --- 2. ADMIN DASHBOARD API HANDLING ---
+      const adminToken = req.headers.get('x-admin-token');
+      if (!adminToken) {
+        return new Response(JSON.stringify({ error: 'Unauthorized: Missing admin token' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-    } else if (adminToken) {
-      // Admin session token validation via GAS
-      const gasUrl = Deno.env.get('GAS_URL') || '';
-      if (gasUrl) {
-        const valRes = await fetch(gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
-        });
-        const valResult = await valRes.json();
-        if (!valResult.success) {
-          return new Response(JSON.stringify({ error: 'Invalid admin session' }), {
-            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-      }
-    } else {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+
+      // Validate session via admin-auth
+      const authRes = await fetch(`${supabaseUrl}/functions/v1/admin-auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+        body: JSON.stringify({ action: 'validate_session' })
       });
+      const authResult = await authRes.json();
+      
+      if (!authResult.valid) {
+        return new Response(JSON.stringify({ error: authResult.error || 'Invalid session' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      action = body.action;
+      requestId = body.requestId;
+      performedBy = authResult.admin;
+    } // End if (isGet)
+    
+    // Process Dashboard / Web-link Actions (Approve/Deny) using RPC
+    if (action === 'approve' || action === 'deny') {
+      if (!requestId) {
+        const errStr = JSON.stringify({ error: 'requestId is required' });
+        return isGet ? respondHtml('requestId is required', false) : new Response(errStr, { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc('process_telegram_approval', {
+        p_request_id: requestId,
+        p_action: action,
+        p_admin_identifier: performedBy
+      });
+
+      if (rpcError) {
+        const errStr = JSON.stringify({ error: rpcError.message });
+        return isGet ? respondHtml('Error: ' + rpcError.message, false) : new Response(errStr, { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (!rpcResult.success) {
+        const errStr = JSON.stringify({ error: rpcResult.error });
+        return isGet ? respondHtml('Error: ' + rpcResult.error, false) : new Response(errStr, { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const successStr = JSON.stringify({ success: true, message: `Request ${action}d successfully.`, ...rpcResult });
+      return isGet ? respondHtml(`Request ${action}d successfully.`, true) : new Response(successStr, { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    } // Close the 'else' block
-    
-    if (action === 'approve') {
-      const result = await handleApprove(requestId, body, supabaseAdmin);
-      return req.method === 'GET' ? handleHtmlResult(result, 'approve') : result;
-    } else if (action === 'deny') {
-      const result = await handleDeny(requestId, body, supabaseAdmin);
-      return req.method === 'GET' ? handleHtmlResult(result, 'deny') : result;
-    } else if (action === 'revoke') {
-      const result = await handleRevoke(body, supabaseAdmin);
-      return req.method === 'GET' ? handleHtmlResult(result, 'revoke') : result;
-    } else {
-      if (req.method === 'GET') return respondHtml('Unknown action', false);
-      return new Response(JSON.stringify({ error: 'Unknown action' }), {
+    if (action === 'revoke') {
+       // Keep simple JS logic for revoke since we didn't write an RPC for revoke
+       return new Response(JSON.stringify({ error: 'Revoke action should be handled via admin-config' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
+    const unkStr = JSON.stringify({ error: 'Unknown action' });
+    return isGet ? respondHtml('Unknown action', false) : new Response(unkStr, { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err: any) {
     if (req.method === 'GET') return respondHtml('Error processing request: ' + err.message, false);
@@ -157,15 +169,6 @@ serve(async (req) => {
     });
   }
 });
-
-async function handleHtmlResult(response: Response, action: string) {
-  const data = await response.json();
-  if (response.status === 200 && data.success) {
-    return respondHtml('Action successful: ' + (data.message || action), true);
-  } else {
-    return respondHtml('Action failed: ' + (data.error || 'Unknown error'), false);
-  }
-}
 
 function respondHtml(message: string, isSuccess: boolean) {
   const color = isSuccess ? '#4CAF50' : '#F44336';
@@ -192,177 +195,4 @@ function respondHtml(message: string, isSuccess: boolean) {
   const headers = new Headers(corsHeaders);
   headers.set('Content-Type', 'text/html; charset=utf-8');
   return new Response(html, { headers });
-}
-
-async function handleApprove(
-  requestId: string,
-  body: any,
-  supabaseAdmin: ReturnType<typeof createClient>
-) {
-  if (!requestId) {
-    return new Response(JSON.stringify({ error: 'requestId is required' }), {
-      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  // Fetch request — must be pending
-  const { data: request, error } = await supabaseAdmin
-    .from('access_requests')
-    .select('*')
-    .eq('request_id', requestId)
-    .single();
-
-  if (error || !request) {
-    return new Response(JSON.stringify({ error: 'Request not found' }), {
-      status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  if (request.status !== 'pending') {
-    return new Response(JSON.stringify({
-      error: `Request already ${request.status}`,
-      status: request.status
-    }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  // Generate device token — raw token returned once, only hash stored
-  const rawToken = `TOK-${crypto.randomUUID()}`;
-  const encoder = new TextEncoder();
-  const tokenHash = Array.from(
-    new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(rawToken)))
-  ).map(b => b.toString(16).padStart(2, '0')).join('');
-
-  const approvedAt = new Date().toISOString();
-  const performedBy = body.performedBy || 'telegram_admin';
-
-  // Update access request
-  await supabaseAdmin
-    .from('access_requests')
-    .update({
-      status: 'approved',
-      approved_at: approvedAt,
-      approved_by: performedBy,
-    })
-    .eq('request_id', requestId);
-
-  // Upsert approved device
-  const { error: deviceError } = await supabaseAdmin
-    .from('approved_devices')
-    .upsert({
-      device_id_hash: request.device_id_hash,
-      token_hash: tokenHash,
-      estate_code: request.estate_code,
-      operator_name: request.operator_name,
-      approved_at: approvedAt,
-      revoked: false,
-      revoked_at: null,
-    }, { onConflict: 'device_id_hash' });
-
-  if (deviceError) {
-    throw new Error(`Failed to create approved device: ${deviceError.message}`);
-  }
-
-  // Create audit event (token hash only, never raw token)
-  await supabaseAdmin.from('approval_events').insert({
-    event_type: 'approve',
-    request_id: requestId,
-    device_id_hash: request.device_id_hash,
-    estate_code: request.estate_code,
-    operator_name: request.operator_name,
-    performed_by: performedBy,
-    event_data: { approved_at: approvedAt }
-  });
-
-  // Return raw token — this is the ONLY time it is ever transmitted.
-  // The Edge Function does NOT log or store the raw token.
-  return new Response(JSON.stringify({
-    success: true,
-    deviceToken: rawToken,
-    message: 'Device approved.',
-  }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-}
-
-async function handleDeny(
-  requestId: string,
-  body: any,
-  supabaseAdmin: ReturnType<typeof createClient>
-) {
-  if (!requestId) {
-    return new Response(JSON.stringify({ error: 'requestId is required' }), {
-      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  const { data: request, error } = await supabaseAdmin
-    .from('access_requests')
-    .select('*')
-    .eq('request_id', requestId)
-    .single();
-
-  if (error || !request) {
-    return new Response(JSON.stringify({ error: 'Request not found' }), {
-      status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  if (request.status !== 'pending') {
-    return new Response(JSON.stringify({
-      error: `Request already ${request.status}`
-    }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  const deniedAt = new Date().toISOString();
-  const performedBy = body.performedBy || 'telegram_admin';
-
-  await supabaseAdmin
-    .from('access_requests')
-    .update({ status: 'denied', denied_at: deniedAt, denied_by: performedBy })
-    .eq('request_id', requestId);
-
-  await supabaseAdmin.from('approval_events').insert({
-    event_type: 'deny',
-    request_id: requestId,
-    device_id_hash: request.device_id_hash,
-    estate_code: request.estate_code,
-    operator_name: request.operator_name,
-    performed_by: performedBy,
-  });
-
-  return new Response(JSON.stringify({ success: true, message: 'Request denied.' }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
-}
-
-async function handleRevoke(
-  body: any,
-  supabaseAdmin: ReturnType<typeof createClient>
-) {
-  const { deviceIdHash } = body;
-  if (!deviceIdHash) {
-    return new Response(JSON.stringify({ error: 'deviceIdHash required' }), {
-      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  const revokedAt = new Date().toISOString();
-
-  const { error } = await supabaseAdmin
-    .from('approved_devices')
-    .update({ revoked: true, revoked_at: revokedAt })
-    .eq('device_id_hash', deviceIdHash);
-
-  if (error) {
-    throw new Error(`Revocation failed: ${error.message}`);
-  }
-
-  await supabaseAdmin.from('approval_events').insert({
-    event_type: 'revoke',
-    device_id_hash: deviceIdHash,
-    performed_by: body.performedBy || 'mod_admin',
-    event_data: { revoked_at: revokedAt },
-  });
-
-  return new Response(JSON.stringify({ success: true, message: 'Device revoked.' }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
 }

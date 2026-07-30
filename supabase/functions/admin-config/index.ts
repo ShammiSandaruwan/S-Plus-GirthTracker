@@ -19,23 +19,27 @@ serve(async (req) => {
       });
     }
 
-    // Validate admin session via GAS
-    const gasUrl = Deno.env.get('GAS_URL') || '';
-    if (gasUrl) {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    
+    // Validate admin session via admin-auth
+    if (supabaseUrl) {
       try {
-        const valRes = await fetch(gasUrl, {
+        const valRes = await fetch(`${supabaseUrl}/functions/v1/admin-auth`, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({ action: 'validate_session' }),
         });
         const valResult = await valRes.json();
-        if (!valResult.success) {
-          return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
+        if (!valResult.valid) {
+          return new Response(JSON.stringify({ error: valResult.error || 'Invalid or expired admin session' }), {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
       } catch (err: any) {
-        return respond({ error: 'GAS Validation failed: ' + (err.message || JSON.stringify(err)) }, 500);
+        return respond({ error: 'Validation failed: ' + (err.message || JSON.stringify(err)) }, 500);
       }
     }
 
@@ -95,7 +99,7 @@ serve(async (req) => {
       case 'migrate_devices':
         return await migrateDevices(supabaseAdmin, body);
       case 'backfill_field_ids':
-        return await backfillFieldIds(supabaseAdmin);
+        return await backfillFieldIds(supabaseAdmin, body);
 
       default:
         return respond({ error: 'Unknown action' }, 400);
@@ -346,6 +350,8 @@ async function revokeDevice(db: any, body: any) {
 // ======================== DEVICE MIGRATION (Idempotent) ========================
 
 async function migrateDevices(db: any, body: any) {
+  const { dryRun = true } = body;
+  
   const gasUrl = Deno.env.get('GAS_URL') || '';
   if (!gasUrl) return respond({ error: 'GAS_URL not configured' }, 500);
 
@@ -372,29 +378,30 @@ async function migrateDevices(db: any, body: any) {
         .single();
 
       if (!existing) {
-        // INSERT — new device
-        await db.from('approved_devices').insert({
-          device_id_hash: src.deviceIdHash,
-          token_hash: src.tokenHash,
-          estate_code: src.estate,
-          operator_name: src.operatorName,
-          approved_at: src.approvedAt || new Date().toISOString(),
-          expires_at: src.expiresAt || null,
-          revoked: src.revoked === true || src.revoked === 'true',
-          revoked_at: null,
-          last_seen_at: src.lastSeenAt || null,
-          last_sync_at: src.lastSyncAt || null,
-        });
+        // INSERT
+        if (!dryRun) {
+          await db.from('approved_devices').insert({
+            device_id_hash: src.deviceIdHash,
+            token_hash: src.tokenHash,
+            estate_code: src.estate,
+            operator_name: src.operatorName,
+            approved_at: src.approvedAt || new Date().toISOString(),
+            expires_at: src.expiresAt || null,
+            revoked: src.revoked === true || src.revoked === 'true',
+            revoked_at: null,
+            last_seen_at: src.lastSeenAt || null,
+            last_sync_at: src.lastSyncAt || null,
+          });
 
-        // Audit event only for newly inserted
-        await db.from('approval_events').insert({
-          event_type: 'migrate_import',
-          device_id_hash: src.deviceIdHash,
-          estate_code: src.estate,
-          operator_name: src.operatorName,
-          performed_by: 'migration_script',
-        });
-
+          // Audit event only for newly inserted
+          await db.from('approval_events').insert({
+            event_type: 'migrate_import',
+            device_id_hash: src.deviceIdHash,
+            estate_code: src.estate,
+            operator_name: src.operatorName,
+            performed_by: 'migration_script',
+          });
+        }
         report.inserted++;
       } else {
         // Compare for identical vs conflict
@@ -422,12 +429,13 @@ async function migrateDevices(db: any, body: any) {
     }
   }
 
-  return respond({ success: true, report });
+  return respond({ success: true, report, dryRun });
 }
 
 // ======================== FIELD ID BACKFILL ========================
 
-async function backfillFieldIds(db: any) {
+async function backfillFieldIds(db: any, body: any) {
+  const { dryRun = true } = body;
   // Find measurements without field_id
   const { data: unmatched, error: fetchErr } = await db
     .from('census_measurements')
@@ -464,9 +472,11 @@ async function backfillFieldIds(db: any) {
     const field = lookup.get(key);
 
     if (field) {
-      await db.from('census_measurements')
-        .update({ field_id: field.id, extent_at_measurement: m.extent || field.extent_ha })
-        .eq('id', m.id);
+      if (!dryRun) {
+        await db.from('census_measurements')
+          .update({ field_id: field.id, extent_at_measurement: m.extent || field.extent_ha })
+          .eq('id', m.id);
+      }
       matched++;
     } else {
       // Track unmatched for report
@@ -488,6 +498,7 @@ async function backfillFieldIds(db: any) {
     total_processed: unmatched.length,
     message: unmatchedReport.length > 0
       ? 'Some measurements could not be matched. Create the missing fields and re-run.'
-      : 'All measurements backfilled successfully.'
+      : 'All measurements backfilled successfully.',
+    dryRun
   });
 }

@@ -14,8 +14,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-    const gasUrl = Deno.env.get('GAS_URL') || '';
-
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error('Supabase environment variables missing');
     }
@@ -30,19 +28,20 @@ serve(async (req) => {
 
     const { estate, division, fieldNo, estate_id, division_id, field_id, dateFrom, dateTo, status } = await req.json();
 
-    // 1. Validate admin token using GAS (or via Supabase if token logic is migrated)
-    const validateResponse = await fetch(gasUrl, {
+    // 1. Validate admin token using admin-auth Edge Function
+    const authUrl = `${supabaseUrl}/functions/v1/admin-auth`;
+    const validateResponse = await fetch(authUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'validate_admin_session',
-        adminSessionToken: adminToken
-      })
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ action: 'validate_session' })
     });
 
     const validateResult = await validateResponse.json();
-    if (!validateResult.success) {
-      return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
+    if (!validateResult.valid) {
+      return new Response(JSON.stringify({ error: validateResult.error || 'Invalid or expired admin session' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });

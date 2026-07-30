@@ -762,7 +762,7 @@ function handleValidateAdminSession(parsed) {
 }
 
 function handleExportToSheet(parsed) {
-  if (!validateAdminSession_(parsed.adminSessionToken)) {
+  if (parsed.gasSharedSecret !== GAS_SHARED_SECRET && !validateAdminSession_(parsed.adminSessionToken)) {
     return respondJson({ success: false, error: "Invalid or expired admin session." });
   }
 

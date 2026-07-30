@@ -27,27 +27,35 @@ serve(async (req) => {
     }
 
     const gasUrl = Deno.env.get('GAS_URL') || '';
+    const gasSharedSecret = Deno.env.get('GAS_SHARED_SECRET') || '';
     if (!gasUrl) {
       return new Response(JSON.stringify({ error: 'GAS_URL not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // 1. Validate admin session via GAS
-    const valRes = await fetch(gasUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
-    });
-    const valResult = await valRes.json();
-    if (!valResult.success) {
-      return new Response(JSON.stringify({ error: 'Invalid admin session' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    
+    // 1. Validate admin session via admin-auth Edge Function
+    if (supabaseUrl) {
+      const valRes = await fetch(`${supabaseUrl}/functions/v1/admin-auth`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({ action: 'validate_session' }),
       });
+      const valResult = await valRes.json();
+      if (!valResult.valid) {
+        return new Response(JSON.stringify({ error: valResult.error || 'Invalid or expired admin session' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
     }
 
     const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') || '',
+      supabaseUrl,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     );
 
@@ -97,7 +105,7 @@ serve(async (req) => {
     // We pass spreadsheetId if we found it. GAS will fall back to its internal map if not provided.
     const exportPayload = JSON.stringify({
       action: 'export_to_sheet',
-      adminSessionToken: adminToken,
+      gasSharedSecret, // Use shared secret instead of adminSessionToken for auth
       estate,
       division,
       fieldNo,
