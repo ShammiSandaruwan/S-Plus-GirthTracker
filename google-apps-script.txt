@@ -23,7 +23,7 @@ const ESTATE_SHEET_MAP = {
   "Watapotha": "15G9oeJ-KeyjYf16Q0bmjCbrsaA_7Rz7FaIUh51OleQA",
 };
 
-const WEB_APP_URL = ScriptApp.getService().getUrl();
+const WEB_APP_URL = SCRIPT_PROPERTIES.getProperty('WEB_APP_URL') || ScriptApp.getService().getUrl();
 
 const MEASUREMENT_HEADERS = [
   "Estate",
