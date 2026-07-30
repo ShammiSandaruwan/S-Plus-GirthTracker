@@ -63,6 +63,21 @@ serve(async (req) => {
         let resolvedDivision = m.division;
         let resolvedFieldNo = m.fieldNo;
 
+        if (!fieldId && estate && m.division && m.fieldNo) {
+          // Attempt to lookup fieldId
+          const { data: foundField } = await supabaseAdmin
+            .from('fields')
+            .select('id, estate_id, division_id, field_code, extent_ha, active, estates!inner(code), divisions!inner(code)')
+            .eq('estates.code', estate)
+            .eq('divisions.code', m.division)
+            .eq('field_code', m.fieldNo)
+            .single();
+            
+          if (foundField && foundField.active) {
+            fieldId = foundField.id;
+          }
+        }
+
         if (fieldId) {
           // Validate field_id exists and is active
           const { data: field, error: fieldErr } = await supabaseAdmin
@@ -72,7 +87,7 @@ serve(async (req) => {
             .single();
 
           if (fieldErr || !field) {
-            errors.push({ localId: m.id, error: 'Invalid field_id' });
+            errors.push({ localId: m.id, error: fieldErr ? `Field lookup error: ${fieldErr.message}` : 'Invalid field_id' });
             continue;
           }
 

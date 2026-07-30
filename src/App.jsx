@@ -385,11 +385,19 @@ function TrackerApp({ approvedData }) {
            );
 
            if (result.success) {
-             const syncedIds = result.syncedIds || batch.map(b => b.id);
+             const syncedIds = result.syncedIds || [];
              if (syncedIds.length > 0) {
                await db.measurements.where('id').anyOf(syncedIds).modify({ syncStatus: 'synced' });
              }
-             setSyncError('');
+             
+             if (result.errors && result.errors.length > 0) {
+               const failedIds = result.errors.map(e => e.localId);
+               await db.measurements.where('id').anyOf(failedIds).modify({ syncStatus: 'failed' });
+               const firstError = result.errors[0].error;
+               setSyncError(`Sync partially failed. First error: ${firstError}`);
+             } else {
+               setSyncError('');
+             }
              setAuthError('');
            }
          } catch (err) {
