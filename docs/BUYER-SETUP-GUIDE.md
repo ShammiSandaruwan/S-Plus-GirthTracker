@@ -67,7 +67,9 @@ VITE_DISABLED_MODE="false"
 
 | Variable | Purpose |
 |---|---|
-| `VITE_GAS_URL` | Google Apps Script web app URL used for sync |
+| `VITE_SUPABASE_URL` | Supabase project URL used for caliper measurement sync & device authorization |
+| `VITE_SUPABASE_ANON_KEY` | Supabase public anonymous key |
+| `VITE_GAS_URL` | (Optional) Google Apps Script web app URL used for direct sheet exports |
 | `VITE_ESTATES` | Comma-separated estate list shown in setup |
 | `VITE_GAS_SECRET` | Shared secret that must match the Apps Script secret |
 | `VITE_MAINTENANCE_MODE` | Shows a maintenance notice when set to `true` |

@@ -16,3 +16,14 @@ db.version(3).stores({
   measurements: '++id, syncStatus, [estate+fieldNo], sessionId, timestamp, abnormalFlag, recommendationStatus',
   settings: 'id, estate, deviceId, accessStatus'
 });
+
+db.version(4).stores({
+  measurements: '++id, syncStatus, [estate+fieldNo], sessionId, timestamp, abnormalFlag, recommendationStatus, [estate+division+fieldNo+extent+treeNo]',
+  settings: 'id, estate, deviceId, accessStatus'
+});
+
+db.version(5).stores({
+  measurements: '++id, syncStatus, [estate+fieldNo], sessionId, timestamp, abnormalFlag, recommendationStatus, [estate+division+fieldNo+extent+treeNo]',
+  settings: 'id, estate, deviceId, accessStatus',
+  fieldConfig: 'id'
+});

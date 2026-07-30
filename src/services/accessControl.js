@@ -5,9 +5,9 @@
  */
 
 import { db } from '../db';
+import { requestAccessViaSupabase, checkAccessViaSupabase } from './supabaseSync';
 
-const GAS_URL = import.meta.env.VITE_GAS_URL || '';
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.1.0';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.1';
 
 /**
  * Generate or retrieve a stable device ID.
@@ -51,7 +51,6 @@ export async function saveAccessStatus(fields) {
  */
 export async function requestAccess({ estate, operatorName, deviceId, location }) {
   const payload = {
-    action: 'request_access',
     estate,
     operatorName,
     deviceId,
@@ -67,34 +66,14 @@ export async function requestAccess({ estate, operatorName, deviceId, location }
     appVersion: APP_VERSION,
   };
 
-  const response = await fetch(GAS_URL, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-  });
-
-  const result = await response.json();
-  return result;
+  return await requestAccessViaSupabase(payload);
 }
 
 /**
  * Check approval status with backend.
  */
 export async function checkAccessStatus(requestId, deviceId) {
-  const payload = {
-    action: 'check_access',
-    requestId,
-    deviceId,
-  };
-
-  const response = await fetch(GAS_URL, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-  });
-
-  const result = await response.json();
-  return result;
+  return await checkAccessViaSupabase(requestId, deviceId);
 }
 
 /**

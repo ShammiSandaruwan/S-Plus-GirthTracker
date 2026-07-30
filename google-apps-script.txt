@@ -11,6 +11,8 @@ const TELEGRAM_CHAT_ID = SCRIPT_PROPERTIES.getProperty('TELEGRAM_CHAT_ID');
 const ADMIN_APPROVAL_KEY = SCRIPT_PROPERTIES.getProperty('ADMIN_APPROVAL_KEY');
 const ADMIN_TOTP_SECRET = SCRIPT_PROPERTIES.getProperty('ADMIN_TOTP_SECRET');
 const ADMIN_SESSION_SECRET = SCRIPT_PROPERTIES.getProperty('ADMIN_SESSION_SECRET') || ADMIN_APPROVAL_KEY;
+const GAS_SHARED_SECRET = SCRIPT_PROPERTIES.getProperty('GAS_SHARED_SECRET');
+const SUPABASE_APPROVE_URL = SCRIPT_PROPERTIES.getProperty('SUPABASE_APPROVE_URL');
 
 const ESTATE_SHEET_MAP = {
   "Peenkande": "1pTiNU5iqECN5pv2XDWVUeRVMiFqRK3m3r7AD_4j3o50", 
@@ -21,7 +23,7 @@ const ESTATE_SHEET_MAP = {
   "Watapotha": "15G9oeJ-KeyjYf16Q0bmjCbrsaA_7Rz7FaIUh51OleQA",
 };
 
-const WEB_APP_URL = ScriptApp.getService().getUrl();
+const WEB_APP_URL = SCRIPT_PROPERTIES.getProperty('WEB_APP_URL') || ScriptApp.getService().getUrl();
 
 const MEASUREMENT_HEADERS = [
   "Estate",
@@ -47,10 +49,16 @@ function doPost(e) {
     const parsed = JSON.parse(e.postData.contents);
     const action = parsed.action;
 
-    if (action === "request_access") {
-      return handleRequestAccess(parsed);
+    if (action === "send_telegram") {
+      return handleSendTelegram(parsed);
+    } else if (action === "admin_export_devices") {
+      return handleAdminExportDevices(parsed);
+    } else if (action === "validate_sheet_access") {
+      return handleValidateSheetAccess(parsed);
+    } else if (action === "request_access") {
+      return handleRequestAccess(parsed); // DEPRECATED
     } else if (action === "check_access") {
-      return handleCheckAccess(parsed);
+      return handleCheckAccess(parsed); // DEPRECATED
     } else if (action === "sync_measurements") {
       return handleSyncMeasurements(parsed);
     } else if (action === "admin_verify_totp") {
@@ -65,6 +73,12 @@ function doPost(e) {
       return handleAdminRevokeDevice(parsed);
     } else if (action === "delete_measurement") {
       return handleDeleteMeasurement(parsed);
+    } else if (action === "validate_device") {
+      return handleValidateDevice(parsed);
+    } else if (action === "validate_admin_session") {
+      return handleValidateAdminSession(parsed);
+    } else if (action === "export_to_sheet") {
+      return handleExportToSheet(parsed);
     }
 
     return respondJson({ success: false, error: "Unknown action" });
@@ -79,11 +93,11 @@ function doGet(e) {
   const adminKey = e.parameter.adminKey;
 
   if (adminKey !== ADMIN_APPROVAL_KEY) {
-    return ContentService.createTextOutput("Invalid admin key.");
+    return respondHtml("Invalid admin key.", false);
   }
 
   if (!requestId) {
-    return ContentService.createTextOutput("Request not found.");
+    return respondHtml("Request not found.", false);
   }
 
   try {
@@ -92,10 +106,36 @@ function doGet(e) {
     } else if (action === "deny") {
       return handleDeny(requestId);
     }
-    return ContentService.createTextOutput("Unknown action.");
+    return respondHtml("Unknown action.", false);
   } catch (error) {
-    return ContentService.createTextOutput("Error: " + error.toString());
+    return respondHtml("Error processing request: " + error.toString(), false);
   }
+}
+
+function respondHtml(message, isSuccess) {
+  const color = isSuccess ? "#4CAF50" : "#F44336";
+  const icon = isSuccess ? "✅" : "❌";
+  return HtmlService.createHtmlOutput(
+    `<!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f9f9f9; }
+          .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 90%; }
+          h2 { color: ${color}; margin-top: 10px; }
+          .icon { font-size: 48px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">${icon}</div>
+          <h2>${message}</h2>
+          <p>You can now close this window.</p>
+        </div>
+      </body>
+    </html>`
+  );
 }
 
 // ----------------------------------------------------
@@ -145,8 +185,8 @@ function handleRequestAccess(parsed) {
 
   const inlineKeyboard = [
     [
-      { text: "✅ Approve", url: `${WEB_APP_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
-      { text: "❌ Deny", url: `${WEB_APP_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
+      { text: "✅ Approve", callback_data: `approve:${requestId}` },
+      { text: "❌ Deny", callback_data: `deny:${requestId}` }
     ]
   ];
 
@@ -403,94 +443,150 @@ function handleDeleteMeasurement(parsed) {
 // Admin Actions (doGet)
 // ----------------------------------------------------
 function handleApprove(requestId) {
-  const reqSheet = getOrCreateSheet("AccessRequests");
-  const reqData = reqSheet.getDataRange().getValues();
-  const headers = reqData[0];
-  
-  let rowIndex = -1;
-  let rowData = null;
-
-  for (let i = 1; i < reqData.length; i++) {
-    if (reqData[i][headers.indexOf("requestId")] === requestId) {
-      rowIndex = i + 1;
-      rowData = reqData[i];
-      break;
-    }
-  }
-
-  if (rowIndex === -1) return ContentService.createTextOutput("Request not found.");
-  
-  const status = rowData[headers.indexOf("status")];
-  if (status === "approved") return ContentService.createTextOutput("This request has already been approved.");
-
-  const deviceIdHash = rowData[headers.indexOf("deviceIdHash")];
-  const estate = rowData[headers.indexOf("estate")];
-  const operatorName = rowData[headers.indexOf("operatorName")];
-  
-  const deviceToken = "TOK-" + Utilities.getUuid();
-  const tokenHash = computeHash(deviceToken);
-  const approvedAt = new Date().toISOString();
-
-  // Update AccessRequests
-  reqSheet.getRange(rowIndex, headers.indexOf("status") + 1).setValue("approved");
-  reqSheet.getRange(rowIndex, headers.indexOf("approvedAt") + 1).setValue(approvedAt);
-  reqSheet.getRange(rowIndex, headers.indexOf("adminAction") + 1).setValue("approved via telegram");
-
-  // Save to ApprovedDevices
-  const appSheet = getOrCreateSheet("ApprovedDevices", [
-    "deviceIdHash", "tokenHash", "estate", "operatorName", "approvedAt", "expiresAt", "revoked", "lastSeenAt", "lastSyncAt", "notes"
-  ]);
-  
-  // Check if device already exists, update or append
-  const appData = appSheet.getDataRange().getValues();
-  let existingAppRow = -1;
-  for(let i=1; i < appData.length; i++){
-     if(appData[i][0] === deviceIdHash){
-       existingAppRow = i + 1;
-       break;
-     }
-  }
-
-  if (existingAppRow > -1) {
-      appSheet.getRange(existingAppRow, 2).setValue(tokenHash); // tokenHash
-      appSheet.getRange(existingAppRow, 3).setValue(estate); // estate
-      appSheet.getRange(existingAppRow, 4).setValue(operatorName); // operatorName
-      appSheet.getRange(existingAppRow, 5).setValue(approvedAt); // approvedAt
-      appSheet.getRange(existingAppRow, 7).setValue(false); // revoked
-  } else {
-      appSheet.appendRow([
-        deviceIdHash, tokenHash, estate, operatorName, approvedAt, "", false, "", "", ""
-      ]);
-  }
-
-  // We need to pass the raw token back to the device, so we temporarily store it in a Cache to be retrieved by the check_access call
-  CacheService.getScriptCache().put("token_" + deviceIdHash, deviceToken, 21600); // 6 hours
-
-  return ContentService.createTextOutput("Access approved successfully.");
+  return callSupabaseApproveDevice(requestId, "approve");
 }
 
 function handleDeny(requestId) {
-  const reqSheet = getOrCreateSheet("AccessRequests");
-  const reqData = reqSheet.getDataRange().getValues();
-  const headers = reqData[0];
-  
-  let rowIndex = -1;
+  return callSupabaseApproveDevice(requestId, "deny");
+}
 
-  for (let i = 1; i < reqData.length; i++) {
-    if (reqData[i][headers.indexOf("requestId")] === requestId) {
-      rowIndex = i + 1;
-      break;
-    }
+function callSupabaseApproveDevice(requestId, action) {
+  if (!SUPABASE_APPROVE_URL || !GAS_SHARED_SECRET) {
+    return respondHtml("Configuration error: SUPABASE_APPROVE_URL or GAS_SHARED_SECRET not set.", false);
   }
 
-  if (rowIndex === -1) return ContentService.createTextOutput("Request not found.");
+  const payload = JSON.stringify({ action: action, requestId: requestId, performedBy: "telegram_admin" });
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = Utilities.getUuid();
+  
+  const signature = computeHmacSha256(payload, GAS_SHARED_SECRET);
 
-  reqSheet.getRange(rowIndex, headers.indexOf("status") + 1).setValue("denied");
-  reqSheet.getRange(rowIndex, headers.indexOf("deniedAt") + 1).setValue(new Date().toISOString());
-  reqSheet.getRange(rowIndex, headers.indexOf("adminAction") + 1).setValue("denied via telegram");
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: payload,
+    headers: {
+      "x-gas-signature": signature,
+      "x-gas-timestamp": timestamp,
+      "x-gas-nonce": nonce
+    },
+    muteHttpExceptions: true
+  };
 
-  return ContentService.createTextOutput("Access request denied.");
+  try {
+    const response = UrlFetchApp.fetch(SUPABASE_APPROVE_URL, options);
+    const result = JSON.parse(response.getContentText());
+    if (response.getResponseCode() === 200 && result.success) {
+      return respondHtml("Action successful: " + (result.message || action), true);
+    } else {
+      return respondHtml("Action failed: " + (result.error || result.message || "Unknown error"), false);
+    }
+  } catch (e) {
+    return respondHtml("Error contacting Supabase: " + e.toString(), false);
+  }
 }
+
+function computeHmacSha256(message, secret) {
+  const rawHash = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_SHA_256, message, secret);
+  let txtHash = '';
+  for (let i = 0; i < rawHash.length; i++) {
+    let hashVal = rawHash[i];
+    if (hashVal < 0) hashVal += 256;
+    if (hashVal.toString(16).length == 1) txtHash += '0';
+    txtHash += hashVal.toString(16);
+  }
+  return txtHash;
+}
+
+// ----------------------------------------------------
+// New Internal Actions (Called by Edge Functions)
+// ----------------------------------------------------
+function handleSendTelegram(parsed) {
+  const { estate, operatorName, requestId, gpsStatus, googleMapLink } = parsed;
+  const safeEstate = safeTelegramText_(estate);
+  const safeOperator = safeTelegramText_(operatorName);
+  const safeGpsStatus = safeTelegramText_(gpsStatus || 'unknown');
+
+  const text = `New GirthTracker Access Request\n\n` +
+               `Estate: ${safeEstate}\n` +
+               `Operator Name: ${safeOperator}\n` +
+               `GPS Status: ${safeGpsStatus}\n` +
+               `Requested At: ${new Date().toISOString()}\n\n` +
+               `Approve or deny this device.`;
+
+  const inlineKeyboard = [
+    [
+      { text: "✅ Approve", url: `${SUPABASE_APPROVE_URL}?action=approve&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` },
+      { text: "❌ Deny", url: `${SUPABASE_APPROVE_URL}?action=deny&requestId=${requestId}&adminKey=${ADMIN_APPROVAL_KEY}` }
+    ]
+  ];
+
+  if (googleMapLink) {
+    inlineKeyboard.push([
+      { text: "📍 Open Location", url: googleMapLink }
+    ]);
+  }
+
+  const result = sendTelegramNotification_(text, inlineKeyboard);
+  return respondJson({ success: result.status === "sent", status: result.status, error: result.error });
+}
+
+function handleAdminExportDevices(parsed) {
+  if (!validateAdminSession_(parsed.adminSessionToken)) {
+    return respondJson({ success: false, error: "Invalid admin session" });
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("ApprovedDevices");
+  if (!sheet) return respondJson({ success: true, devices: [] });
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return respondJson({ success: true, devices: [] });
+  
+  const headers = data[0];
+  const devices = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    devices.push({
+      deviceIdHash: row[headers.indexOf("deviceIdHash")],
+      tokenHash: row[headers.indexOf("tokenHash")],
+      estate: row[headers.indexOf("estate")],
+      operatorName: row[headers.indexOf("operatorName")],
+      approvedAt: row[headers.indexOf("approvedAt")],
+      expiresAt: row[headers.indexOf("expiresAt")],
+      revoked: row[headers.indexOf("revoked")],
+      lastSeenAt: row[headers.indexOf("lastSeenAt")],
+      lastSyncAt: row[headers.indexOf("lastSyncAt")],
+    });
+  }
+  
+  return respondJson({ success: true, devices });
+}
+
+function handleValidateSheetAccess(parsed) {
+  const { spreadsheetId, tabName } = parsed;
+  if (!spreadsheetId) return respondJson({ success: false, error: "Spreadsheet ID is required" });
+  
+  try {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    let sheet;
+    if (tabName) {
+      sheet = ss.getSheetByName(tabName);
+    } else {
+      sheet = ss.getSheets()[0];
+    }
+    
+    if (!sheet) {
+      return respondJson({ success: false, error: `Tab '${tabName}' not found in spreadsheet` });
+    }
+    
+    // Quick test: can we read properties?
+    const name = sheet.getName();
+    return respondJson({ success: true, message: `Access successful to tab '${name}'` });
+  } catch (e) {
+    return respondJson({ success: false, error: e.message });
+  }
+}
+
 
 // ----------------------------------------------------
 // Utilities
@@ -638,6 +734,114 @@ function validateDevice(deviceId, deviceToken, estate, operatorName) {
   }
 
   return { success: false, errorType: "auth_failed", error: "Device not approved." };
+}
+
+// ----------------------------------------------------
+// Edge Function Helpers (Supabase Integration)
+// ----------------------------------------------------
+function handleValidateDevice(parsed) {
+  const { deviceId, deviceToken, estate, operatorName } = parsed;
+  const authResult = validateDevice(deviceId, deviceToken, estate, operatorName);
+  
+  if (authResult.success) {
+    return respondJson({ success: true, deviceIdHash: computeHash(deviceId) });
+  } else {
+    return respondJson({ success: false, error: authResult.error, errorType: authResult.errorType });
+  }
+}
+
+function handleValidateAdminSession(parsed) {
+  const { adminSessionToken } = parsed;
+  const isValid = validateAdminSession_(adminSessionToken);
+  
+  if (isValid) {
+    return respondJson({ success: true });
+  } else {
+    return respondJson({ success: false, error: "Invalid admin session" });
+  }
+}
+
+function handleExportToSheet(parsed) {
+  if (parsed.gasSharedSecret !== GAS_SHARED_SECRET && !validateAdminSession_(parsed.adminSessionToken)) {
+    return respondJson({ success: false, error: "Invalid or expired admin session." });
+  }
+
+  const { estate, division, fieldNo, rows, spreadsheetId, tabName } = parsed;
+  if (!estate || !fieldNo) {
+    return respondJson({ success: false, error: "Estate and Field No are required for export." });
+  }
+
+  const sheetId = spreadsheetId || ESTATE_SHEET_MAP[estate];
+  if (!sheetId) return respondJson({ success: false, error: "Unknown estate and no spreadsheetId provided." });
+
+  let sheet;
+  try {
+    const ss = SpreadsheetApp.openById(sheetId);
+    if (tabName) {
+      sheet = ss.getSheetByName(tabName);
+    }
+    if (!sheet) {
+      sheet = ss.getSheets()[0];
+    }
+    ensureMeasurementSheetSchema_(sheet);
+  } catch (e) {
+    return respondJson({ success: false, error: "Sheet error: " + e.message });
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  let colMap;
+  try {
+    colMap = getRequiredMeasurementColumnMap_(headers);
+  } catch (e) {
+    return respondJson({ success: false, error: e.message });
+  }
+
+  const divCol = colMap["Division"];
+  const fieldCol = colMap["Field No"];
+
+  // 1. Delete existing rows for this exact field
+  // Iterate backwards to safely delete rows without messing up indices
+  for (let i = data.length - 1; i >= 1; i--) {
+    const rowDiv = String(data[i][divCol] || "").trim();
+    const rowField = String(data[i][fieldCol] || "").trim();
+    
+    // If division is provided in the filter, it must match. Otherwise, just match fieldNo.
+    const divMatches = !division || rowDiv.toLowerCase() === division.toLowerCase();
+    const fieldMatches = rowField.toLowerCase() === fieldNo.toLowerCase();
+
+    if (divMatches && fieldMatches) {
+      sheet.deleteRow(i + 1);
+    }
+  }
+
+  // 2. Write all exported rows
+  if (rows && rows.length > 0) {
+    const rowData = rows.map(r => [
+      r.estate,
+      r.division || "",
+      r.field_no || "",
+      valueOrBlank_(r.extent),
+      valueOrBlank_(r.tree_no),
+      valueOrBlank_(r.caliper_reading),
+      valueOrBlank_(r.girth),
+      formatSriLankaDateTime_(r.measured_at),
+      r.recommendation_text || "",
+      r.abnormal_flag ? "Yes" : "No",
+      r.abnormal_reason || "",
+      valueOrBlank_(r.latitude),
+      valueOrBlank_(r.longitude),
+      valueOrBlank_(r.gps_accuracy),
+      r.google_map_link || createGoogleMapLink_(r.latitude, r.longitude),
+      r.id // measurement_id
+    ]);
+    
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, rowData.length, rowData[0].length).setValues(rowData);
+  }
+
+  return respondJson({ success: true, rowCount: rows ? rows.length : 0 });
 }
 
 function updateLastSeen(deviceIdHash) {
