@@ -822,27 +822,16 @@ function TrackerApp({ approvedData }) {
                 onChange={e => setSettings({...settings, operatorName: e.target.value})}
               />
             </div>
-            <div className="form-group">
-              <label>Estate</label>
-              {configEstates.length > 0 ? (
-                <select
-                  required
-                  value={settings.estate}
-                  onChange={e => setSettings({...settings, estate: e.target.value, division: '', fieldNo: '', extent: ''})}
-                >
-                  <option value="">Select Estate...</option>
-                  {configEstates.map(est => <option key={est.id} value={est.name}>{est.name}</option>)}
-                </select>
-              ) : (
+              <div className="form-group">
+                <label>Estate</label>
                 <input 
                   type="text" 
-                  required 
-                  placeholder="e.g. Sample Estate"
-                  value={settings.estate}
-                  onChange={e => setSettings({...settings, estate: e.target.value, division: '', fieldNo: '', extent: ''})}
+                  readOnly 
+                  value={settings.estate || ''}
+                  className="read-only-input"
+                  style={{ background: 'var(--element-bg)', color: 'var(--text-muted)' }}
                 />
-              )}
-            </div>
+              </div>
             
             {/* Cascading Logic */}
             {(() => {
@@ -870,13 +859,9 @@ function TrackerApp({ approvedData }) {
                         {availableDivisions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                       </select>
                     ) : (
-                      <input 
-                        type="text" 
-                        required 
-                        placeholder="e.g. Sample Divi"
-                        value={settings.division}
-                        onChange={e => setSettings({...settings, division: e.target.value, fieldNo: '', extent: ''})}
-                      />
+                      <select required disabled>
+                        <option value="">No divisions synced</option>
+                      </select>
                     )}
                   </div>
                   <div className="input-row">
@@ -896,12 +881,9 @@ function TrackerApp({ approvedData }) {
                           {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.display_name || f.field_code}</option>)}
                         </select>
                       ) : (
-                        <input 
-                          type="text" 
-                          required 
-                          value={settings.fieldNo}
-                          onChange={e => setSettings({...settings, fieldNo: e.target.value})}
-                        />
+                        <select required disabled>
+                          <option value="">No fields synced</option>
+                        </select>
                       )}
                     </div>
                     <div className="form-group">
@@ -909,10 +891,10 @@ function TrackerApp({ approvedData }) {
                       <input 
                         type="number" 
                         step="0.01" 
-                        required 
                         value={settings.extent}
-                        readOnly={availableFields.length > 0}
-                        onChange={e => setSettings({...settings, extent: e.target.value})}
+                        readOnly={true}
+                        className="read-only-input"
+                        style={{ background: 'var(--element-bg)', color: 'var(--text-muted)' }}
                       />
                     </div>
                   </div>
@@ -1246,7 +1228,7 @@ function TrackerApp({ approvedData }) {
                             {availableDivisions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                           </select>
                         ) : (
-                          <input required type="text" value={newFieldData.division} onChange={e => setNewFieldData({...newFieldData, division: e.target.value, fieldNo: '', extent: ''})} />
+                          <select required disabled><option value="">No divisions synced</option></select>
                         )}
                       </div>
                       <div className="input-row new-field-grid">
@@ -1266,12 +1248,12 @@ function TrackerApp({ approvedData }) {
                               {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.display_name || f.field_code}</option>)}
                             </select>
                           ) : (
-                            <input required type="text" value={newFieldData.fieldNo} onChange={e => setNewFieldData({...newFieldData, fieldNo: e.target.value})} />
+                            <select required disabled><option value="">No fields synced</option></select>
                           )}
                         </div>
                         <div className="form-group">
                           <label>Extent (Ha)</label>
-                          <input required type="number" step="0.01" value={newFieldData.extent} readOnly={availableFields.length > 0} onChange={e => setNewFieldData({...newFieldData, extent: e.target.value})} />
+                          <input type="number" step="0.01" value={newFieldData.extent} readOnly={true} className="read-only-input" style={{ background: 'var(--element-bg)', color: 'var(--text-muted)' }} />
                         </div>
                       </div>
                     </>
