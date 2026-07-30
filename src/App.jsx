@@ -9,7 +9,7 @@ import FieldInsightsModal from './components/FieldInsightsModal';
 import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
 import { girthToCm, getRecommendation } from './services/recommendation';
 import { checkAbnormal } from './services/analytics';
-import { syncToSupabase, undoFromSupabase, fetchFieldConfig, checkDuplicateInDexie } from './services/supabaseSync';
+import { syncToSupabase, undoFromSupabase, checkDuplicateInDexie } from './services/supabaseSync';
 import { SUPABASE_URL } from './services/supabaseClient';
 import AdminPage from './components/AdminPage';
 import './index.css';

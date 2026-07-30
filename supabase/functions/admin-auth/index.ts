@@ -57,15 +57,17 @@ serve(async (req) => {
       // 2. Validate TOTP
       let totpValid = false;
       try {
+        const cleanSecret = totpSecretBase32.replace(/[\s\-]/g, '').toUpperCase();
+        const cleanCode = String(code || '').replace(/\s+/g, '');
         const totp = new OTPAuth.TOTP({
           issuer: "GirthTracker",
           label: "Admin",
           algorithm: "SHA1",
           digits: 6,
           period: 30,
-          secret: OTPAuth.Secret.fromBase32(totpSecretBase32),
+          secret: OTPAuth.Secret.fromBase32(cleanSecret),
         });
-        const delta = totp.validate({ token: code, window: 1 });
+        const delta = totp.validate({ token: cleanCode, window: 2 });
         totpValid = (delta !== null);
       } catch (e) {
         totpValid = false;
@@ -86,7 +88,7 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         });
         
-        return respond({ error: 'Authentication failed.' }, 401);
+        return respond({ error: 'Authentication failed. Invalid code or clock drift.' }, 401);
       }
 
       // 3. Reset rate limits on success

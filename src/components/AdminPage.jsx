@@ -443,8 +443,9 @@ export default function AdminPage() {
 
   const handleVerify = async (e) => {
     e.preventDefault();
-    if (!totpCode || totpCode.length !== 6) {
-      setError('Please enter a 6-digit code.');
+    const cleanCode = (totpCode || '').replace(/\s+/g, '');
+    if (!cleanCode || cleanCode.length !== 6) {
+      setError('Please enter a valid 6-digit code.');
       return;
     }
     setVerifying(true);
@@ -453,7 +454,7 @@ export default function AdminPage() {
       const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/admin-auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'login', code: totpCode }),
+        body: JSON.stringify({ action: 'login', code: cleanCode }),
       });
       const data = await res.json();
       if (data.success && data.token) {
