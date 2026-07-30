@@ -893,7 +893,7 @@ function TrackerApp({ approvedData }) {
                           }}
                         >
                           <option value="">Select Field...</option>
-                          {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.field_code}</option>)}
+                          {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.display_name || f.field_code}</option>)}
                         </select>
                       ) : (
                         <input 
@@ -1263,7 +1263,7 @@ function TrackerApp({ approvedData }) {
                               }}
                             >
                               <option value="">Select Field...</option>
-                              {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.field_code}</option>)}
+                              {availableFields.map(f => <option key={f.id} value={f.field_code}>{f.display_name || f.field_code}</option>)}
                             </select>
                           ) : (
                             <input required type="text" value={newFieldData.fieldNo} onChange={e => setNewFieldData({...newFieldData, fieldNo: e.target.value})} />
