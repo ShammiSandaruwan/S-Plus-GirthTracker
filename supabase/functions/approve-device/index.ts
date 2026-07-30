@@ -38,44 +38,102 @@ serve(async (req) => {
     } else {
       const bodyText = await req.text();
       body = JSON.parse(bodyText);
-      action = body.action;
-      requestId = body.requestId;
 
-      // Determine auth method: HMAC (from GAS Telegram callback) or admin token (from /mod)
-      const hasHmac = req.headers.get('x-gas-signature');
-      const adminToken = req.headers.get('x-admin-token');
+      // --- TELEGRAM WEBHOOK HANDLING ---
+    if (body.callback_query) {
+      const callbackQuery = body.callback_query;
+      const data = callbackQuery.data; // e.g. "approve:REQ-123"
+      const chatId = callbackQuery.message?.chat?.id;
+      const messageId = callbackQuery.message?.message_id;
 
-      if (hasHmac) {
-        // HMAC verification for GAS → Edge Function calls
-        const hmacResult = await verifyGasHmac(req, bodyText, supabaseAdmin);
-        if (!hmacResult.valid) {
-          return new Response(JSON.stringify({ error: hmacResult.error }), {
-            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+      if (data && (data.startsWith('approve:') || data.startsWith('deny:'))) {
+        const [cbAction, cbRequestId] = data.split(':');
+        
+        let resultMessage = '';
+        try {
+          if (cbAction === 'approve') {
+            const res = await handleApprove(cbRequestId, { performedBy: `telegram_admin` }, supabaseAdmin);
+            const resData = await res.json();
+            resultMessage = resData.success ? '✅ Device Approved!' : `❌ Error: ${resData.error}`;
+          } else {
+            const res = await handleDeny(cbRequestId, { performedBy: `telegram_admin` }, supabaseAdmin);
+            const resData = await res.json();
+            resultMessage = resData.success ? '❌ Device Denied.' : `❌ Error: ${resData.error}`;
+          }
+        } catch (e: any) {
+          resultMessage = `Error: ${e.message}`;
         }
-      } else if (adminToken) {
-        // Admin session token validation via GAS
-        const gasUrl = Deno.env.get('GAS_URL') || '';
-        if (gasUrl) {
-          const valRes = await fetch(gasUrl, {
+
+        const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+        if (botToken) {
+          // 1. Answer the callback query to show a toast and stop the loading spinner
+          await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              callback_query_id: callbackQuery.id,
+              text: resultMessage,
+              show_alert: true
+            })
           });
-          const valResult = await valRes.json();
-          if (!valResult.success) {
-            return new Response(JSON.stringify({ error: 'Invalid admin session' }), {
-              status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+
+          // 2. Edit the original message to remove buttons and append status
+          if (chatId && messageId && callbackQuery.message.text) {
+            await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                message_id: messageId,
+                text: `${callbackQuery.message.text}\n\nStatus: ${resultMessage}`
+              })
             });
           }
         }
-      } else {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        return new Response('OK');
+      }
+    }
+    // --- END TELEGRAM WEBHOOK HANDLING ---
+
+    action = body.action;
+    requestId = body.requestId;
+
+    // Determine auth method: HMAC (from GAS Telegram callback) or admin token (from /mod)
+    const hasHmac = req.headers.get('x-gas-signature');
+    const adminToken = req.headers.get('x-admin-token');
+
+    if (hasHmac) {
+      // HMAC verification for GAS → Edge Function calls
+      const hmacResult = await verifyGasHmac(req, bodyText, supabaseAdmin);
+      if (!hmacResult.valid) {
+        return new Response(JSON.stringify({ error: hmacResult.error }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
+    } else if (adminToken) {
+      // Admin session token validation via GAS
+      const gasUrl = Deno.env.get('GAS_URL') || '';
+      if (gasUrl) {
+        const valRes = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ action: 'validate_admin_session', adminSessionToken: adminToken }),
+        });
+        const valResult = await valRes.json();
+        if (!valResult.success) {
+          return new Response(JSON.stringify({ error: 'Invalid admin session' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+    } else {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
+    } // Close the 'else' block
+    
     if (action === 'approve') {
       const result = await handleApprove(requestId, body, supabaseAdmin);
       return req.method === 'GET' ? handleHtmlResult(result, 'approve') : result;
