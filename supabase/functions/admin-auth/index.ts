@@ -54,11 +54,19 @@ serve(async (req) => {
         return respond({ error: 'Too many attempts. Try again later.' }, 429);
       }
 
-      // 2. Validate TOTP
       let totpValid = false;
+      let debugMetadata: any = {};
       try {
         const cleanSecret = totpSecretBase32.replace(/[\s\-]/g, '').toUpperCase();
         const cleanCode = String(code || '').replace(/\s+/g, '');
+
+        // Hashing cleanSecret for verification (safe representation check)
+        const secretData = new TextEncoder().encode(cleanSecret);
+        const secretHashBuffer = await crypto.subtle.digest('SHA-256', secretData);
+        const secretHashHex = Array.from(new Uint8Array(secretHashBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
         const totp = new OTPAuth.TOTP({
           issuer: "GirthTracker",
           label: "Admin",
@@ -67,10 +75,86 @@ serve(async (req) => {
           period: 30,
           secret: OTPAuth.Secret.fromBase32(cleanSecret),
         });
-        const delta = totp.validate({ token: cleanCode, window: 2 });
+
+        // Debug details (expanded to ±4 window to locate drift)
+        const nowMs = Date.now();
+        const currentCounter = Math.floor(nowMs / 30000);
+        
+        // Generate tokens for window checking internally to log which one matched (without logging raw codes)
+        const tokenMinus4 = totp.generate({ counter: currentCounter - 4 });
+        const tokenMinus3 = totp.generate({ counter: currentCounter - 3 });
+        const tokenMinus2 = totp.generate({ counter: currentCounter - 2 });
+        const tokenMinus1 = totp.generate({ counter: currentCounter - 1 });
+        const tokenZero = totp.generate({ counter: currentCounter });
+        const tokenPlus1 = totp.generate({ counter: currentCounter + 1 });
+        const tokenPlus2 = totp.generate({ counter: currentCounter + 2 });
+        const tokenPlus3 = totp.generate({ counter: currentCounter + 3 });
+        const tokenPlus4 = totp.generate({ counter: currentCounter + 4 });
+
+        const matchesMinus4 = cleanCode === tokenMinus4;
+        const matchesMinus3 = cleanCode === tokenMinus3;
+        const matchesMinus2 = cleanCode === tokenMinus2;
+        const matchesMinus1 = cleanCode === tokenMinus1;
+        const matchesZero = cleanCode === tokenZero;
+        const matchesPlus1 = cleanCode === tokenPlus1;
+        const matchesPlus2 = cleanCode === tokenPlus2;
+        const matchesPlus3 = cleanCode === tokenPlus3;
+        const matchesPlus4 = cleanCode === tokenPlus4;
+
+        const delta = totp.validate({ token: cleanCode, window: 4 });
         totpValid = (delta !== null);
-      } catch (e) {
+
+        const secretSource = Deno.env.get('ADMIN_TOTP_SECRET') ? "ADMIN_TOTP_SECRET (Deno.env)" : "none";
+        
+        debugMetadata = {
+          serverTimeUtc: new Date(nowMs).toISOString(),
+          serverTimestamp: nowMs,
+          currentCounter: currentCounter,
+          codeLength: cleanCode.length,
+          isDigitsOnly: /^\d+$/.test(cleanCode),
+          secretEmpty: !cleanSecret,
+          secretLength: cleanSecret.length,
+          secretSha256: secretHashHex,
+          secretSource: secretSource,
+          matchesMinus4: matchesMinus4,
+          matchesMinus3: matchesMinus3,
+          matchesMinus2: matchesMinus2,
+          matchesMinus1: matchesMinus1,
+          matchesZero: matchesZero,
+          matchesPlus1: matchesPlus1,
+          matchesPlus2: matchesPlus2,
+          matchesPlus3: matchesPlus3,
+          matchesPlus4: matchesPlus4,
+          deltaReceived: delta
+        };
+
+        console.log(
+          `[ADMIN-AUTH-DEBUG] [Req:${req.headers.get("x-request-id") || "unknown"}] TOTP VERIFICATION` +
+          ` | serverTimeUtc:${debugMetadata.serverTimeUtc}` +
+          ` | serverTimestamp:${debugMetadata.serverTimestamp}` +
+          ` | currentCounter:${debugMetadata.currentCounter}` +
+          ` | codeLength:${debugMetadata.codeLength}` +
+          ` | isDigitsOnly:${debugMetadata.isDigitsOnly}` +
+          ` | secretEmpty:${debugMetadata.secretEmpty}` +
+          ` | secretLength:${debugMetadata.secretLength}` +
+          ` | secretSource:${debugMetadata.secretSource}` +
+          ` | allowedWindow:±4 steps` +
+          ` | matchesMinus4:${debugMetadata.matchesMinus4}` +
+          ` | matchesMinus3:${debugMetadata.matchesMinus3}` +
+          ` | matchesMinus2:${debugMetadata.matchesMinus2}` +
+          ` | matchesMinus1:${debugMetadata.matchesMinus1}` +
+          ` | matchesZero:${debugMetadata.matchesZero}` +
+          ` | matchesPlus1:${debugMetadata.matchesPlus1}` +
+          ` | matchesPlus2:${debugMetadata.matchesPlus2}` +
+          ` | matchesPlus3:${debugMetadata.matchesPlus3}` +
+          ` | matchesPlus4:${debugMetadata.matchesPlus4}` +
+          ` | deltaReceived:${debugMetadata.deltaReceived}` +
+          ` | totpValid:${totpValid}`
+        );
+      } catch (e: any) {
         totpValid = false;
+        debugMetadata = { error: e.message };
+        console.error(`[ADMIN-AUTH-DEBUG] Error during TOTP verification: ${e.message}`);
       }
 
       if (!totpValid) {
@@ -88,7 +172,10 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         });
         
-        return respond({ error: 'Authentication failed. Invalid code or clock drift.' }, 401);
+        return respond({ 
+          error: 'Authentication failed. Invalid code or clock drift.',
+          debugMetadata: debugMetadata
+        }, 401);
       }
 
       // 3. Reset rate limits on success

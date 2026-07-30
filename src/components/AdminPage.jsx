@@ -688,12 +688,22 @@ export default function AdminPage() {
                 {loadingData ? <RefreshCw className="pulse" size={20} /> : <Database size={20} />}
                 {loadingData ? 'Loading...' : 'Load Data'}
               </button>
-              {measurements.length > 0 && (
-                <button className="btn" onClick={handleExport} disabled={exporting || !fieldNoFilterId} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem', marginLeft: '0.5rem', background: 'var(--success)', color: '#fff' }}>
-                  {exporting ? <RefreshCw className="pulse" size={20} /> : <Download size={20} />}
-                  {exporting ? 'Exporting...' : 'Export Field to Sheet'}
-                </button>
-              )}
+              <button 
+                className="btn" 
+                onClick={handleExport} 
+                disabled={exporting || !selectedEstateId || !fieldNoFilterId} 
+                style={{ 
+                  flex: '0 0 auto', 
+                  width: 'auto', 
+                  marginBottom: '0.3rem', 
+                  marginLeft: '0.5rem', 
+                  background: (!selectedEstateId || !fieldNoFilterId) ? undefined : 'var(--success)', 
+                  color: (!selectedEstateId || !fieldNoFilterId) ? undefined : '#fff' 
+                }}
+              >
+                {exporting ? <RefreshCw className="pulse" size={20} /> : <Download size={20} />}
+                {exporting ? 'Exporting...' : 'Export Field to Sheet'}
+              </button>
               {measurements.length > 0 && (
                 <button className="btn btn-secondary" onClick={() => mapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} style={{ flex: '0 0 auto', width: 'auto', marginBottom: '0.3rem', marginLeft: '0.5rem' }}>
                   View Map

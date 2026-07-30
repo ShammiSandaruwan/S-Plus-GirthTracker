@@ -227,24 +227,56 @@ serve(async (req) => {
           local_dexie_id: m.id || null,
         };
 
+        // Check if a row with the same field_id and tree_no already exists
+        const { data: existingRow, error: checkError } = await supabaseAdmin
+          .from('census_measurements')
+          .select('id, device_id_hash, local_dexie_id')
+          .eq('field_id', fieldRow.id)
+          .eq('tree_no', m.treeNo)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error(`[SYNC-DEBUG] [Req:${requestId}] Error checking duplicates: ${checkError.message}`);
+        }
+
+        if (existingRow) {
+          // Idempotency check: is this the same device retrying/updating the same local Dexie record?
+          const isSameDeviceAndRecord = 
+            existingRow.device_id_hash === authResult.deviceIdHash && 
+            existingRow.local_dexie_id === m.id;
+          
+          if (!isSameDeviceAndRecord) {
+            console.warn(
+              `[SYNC-DEBUG] [Req:${requestId}] DUPLICATE REJECTION | localId:${localId} | fieldId:${fieldRow.id} | treeNo:${m.treeNo}` +
+              ` | existingRow: { id:'${existingRow.id}', device:'${existingRow.device_id_hash?.substring(0, 10)}', localId:${existingRow.local_dexie_id} }` +
+              ` | incoming: { device:'${authResult.deviceIdHash?.substring(0, 10)}', localId:${m.id} }`
+            );
+            errors.push({
+              localId,
+              errorCode: 'DUPLICATE_TREE_NUMBER',
+              error: `Tree #${m.treeNo} has already been measured in this field by another device or session.`
+            });
+            continue;
+          }
+        }
+
         const { error: upsertError } = await supabaseAdmin
           .from('census_measurements')
-          .upsert(row, { onConflict: 'estate,division,field_no,extent,tree_no' });
+          .upsert(row, { onConflict: 'field_id, tree_no' });
 
         if (upsertError) {
+          const isDuplicate = upsertError.code === '23505';
+          const errorCode = isDuplicate ? 'DUPLICATE_TREE_NUMBER' : 'VALIDATION_ERROR';
+          const errorMessage = isDuplicate ? `Tree #${m.treeNo} has already been measured in this field.` : upsertError.message;
           console.error(
             `[SYNC-DEBUG] [Req:${requestId}] DB UPSERT ERROR | localId:${localId} | deviceIdHash:${authResult.deviceIdHash?.substring(0, 10)}` +
-            ` | approvedEstate: { id:'${approvedEstateId}', code:'${approvedEstate.code}', name:'${approvedEstate.name}' }` +
-            ` | incomingFieldId:'${m.fieldId}' | usedCanonicalPath:${usedCanonicalPath} | usedLegacyFallback:${usedLegacyFallback} | lookupPath:'${lookupPath}'` +
-            ` | fieldLookupSuccess:true` +
-            ` | resolvedField: { id:'${fieldRow.id}', estate_id:'${fieldRow.estate_id}', estateCode:'${fieldRow.estates?.code}', estateName:'${fieldRow.estates?.name}' }` +
-            ` | cause: database upsert failure | errorCode: VALIDATION_ERROR` +
+            ` | cause: database upsert failure | errorCode: ${errorCode}` +
             ` | error: ${upsertError.message}`
           );
           errors.push({
             localId,
-            errorCode: 'VALIDATION_ERROR',
-            error: `Database error: ${upsertError.message}`
+            errorCode,
+            error: errorMessage
           });
         } else {
           console.log(`[SYNC-DEBUG] [Req:${requestId}] SYNC SUCCESS | localId:${localId} | fieldId:${fieldRow.id} | lookupPath:'${lookupPath}'`);
