@@ -189,6 +189,7 @@ CREATE TABLE approved_devices (
 );
 
 CREATE INDEX idx_ad_estate ON approved_devices (estate_code);
+CREATE INDEX idx_ad_estate_id ON approved_devices (estate_id);
 CREATE INDEX idx_ad_revoked ON approved_devices (revoked);
 
 ALTER TABLE approved_devices ENABLE ROW LEVEL SECURITY;
