@@ -7,7 +7,7 @@
 import { db } from '../db';
 import { requestAccessViaSupabase, checkAccessViaSupabase } from './supabaseSync';
 
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.1.0';
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.1';
 
 /**
  * Generate or retrieve a stable device ID.
