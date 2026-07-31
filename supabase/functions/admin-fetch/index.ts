@@ -56,20 +56,38 @@ serve(async (req) => {
       .select('*');
 
     if (estate_id) {
-      query = query.eq('estate_id', estate_id);
-    } else if (estate) {
+      const { data: estateRow } = await supabaseAdmin
+        .from('estates')
+        .select('code, name')
+        .eq('id', estate_id)
+        .maybeSingle();
+
+      if (estateRow) {
+        const estateValues = Array.from(new Set([estateRow.code, estateRow.name].filter(Boolean)));
+        query = query.in('estate', estateValues);
+      }
+    } else if (estate && estate !== 'all') {
       query = query.eq('estate', estate);
     }
 
     if (division_id) {
-      query = query.eq('division_id', division_id);
-    } else if (division) {
+      const { data: divRow } = await supabaseAdmin
+        .from('divisions')
+        .select('code, name')
+        .eq('id', division_id)
+        .maybeSingle();
+
+      if (divRow) {
+        const divValues = Array.from(new Set([divRow.code, divRow.name].filter(Boolean)));
+        query = query.in('division', divValues);
+      }
+    } else if (division && division !== 'all') {
       query = query.eq('division', division);
     }
 
     if (field_id) {
       query = query.eq('field_id', field_id);
-    } else if (fieldNo) {
+    } else if (fieldNo && fieldNo !== 'all') {
       query = query.eq('field_no', fieldNo);
     }
 
