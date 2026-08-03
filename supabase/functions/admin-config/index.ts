@@ -517,13 +517,13 @@ async function backfillFieldIds(db: any, body: any) {
 // ======================== SUMMARY ========================
 
 async function getSummary(db: any, body: any) {
-  // 1. Get all estates, divisions, fields (now including extent)
-  const { data: allEstates } = await db.from('estates').select('id, code, name, active').order('name');
-  const { data: allDivisions } = await db.from('divisions').select('id, code, name, active, estate_id').order('name');
-  const { data: allFields } = await db.from('fields').select('id, field_code, active, division_id, estate_id, extent').order('field_code');
+  // 1. Get all estates, divisions, fields (extent_ha column)
+  const { data: allEstates, error: estErr } = await db.from('estates').select('id, code, name, active').order('name');
+  const { data: allDivisions, error: divErr } = await db.from('divisions').select('id, code, name, active, estate_id').order('name');
+  const { data: allFields, error: fldErr } = await db.from('fields').select('id, field_code, active, division_id, estate_id, extent_ha').order('field_code');
 
   if (!allEstates || !allDivisions || !allFields) {
-    return respond({ error: 'Failed to load configuration data' }, 500);
+    return respond({ error: 'Failed to load configuration data', details: { estErr, divErr, fldErr } }, 500);
   }
 
   // 2. Get aggregate counts from census_measurements using the new v2 RPC
@@ -556,7 +556,7 @@ async function getSummary(db: any, body: any) {
         field_id: field.id,
         field_code: field.field_code,
         field_active: field.active,
-        extent: field.extent,
+        extent: field.extent_ha,
         division_id: field.division_id,
         division_name: division?.name || '-',
         estate_id: field.estate_id,
