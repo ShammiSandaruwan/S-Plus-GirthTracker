@@ -182,6 +182,10 @@ function TrackerApp({ approvedData }) {
   const [configFields, setConfigFields] = useState([]);
   const [configVersion, setConfigVersion] = useState(0);
 
+  const [treeCondition, setTreeCondition] = useState('healthy');
+  const [conditionNote, setConditionNote] = useState('');
+  const [saveSummaryToast, setSaveSummaryToast] = useState('');
+
   const openNewFieldWizard = () => {
     setNewFieldData({
       division: settings.division || '',
@@ -267,7 +271,7 @@ function TrackerApp({ approvedData }) {
   }, []);
 
   useEffect(() => {
-    // Already running as installed PWA — skip all install logic
+    // Already running as installed PWA - skip all install logic
     if (isStandalone) return;
 
     let promptFired = false;
@@ -473,41 +477,80 @@ function getFriendlySyncErrorMessage(errorObj) {
     return () => clearInterval(interval);
   }, [isOnline, pendingCountForSync, syncPending]);
 
-  const saveMeasurement = useCallback(async (caliperReading) => {
-    if (isNaN(caliperReading) || caliperReading <= 0) return;
-    
+  const saveMeasurement = useCallback(async (caliperReading, conditionOverride = null, noteOverride = null) => {
+    const activeCondition = conditionOverride || treeCondition;
+    const activeNote = (noteOverride !== null ? noteOverride : conditionNote).trim();
     const currentSettings = settingsRef.current;
 
-    if (caliperReading < MIN_READING || caliperReading > MAX_READING) {
-      if (currentSettings.audioConfirmationEnabled) playBeep('error');
-      setRangeError(`Reading ${caliperReading}" outside valid range (${MIN_READING}–${MAX_READING}"). Ignored.`);
-      setTimeout(() => setRangeError(''), 3000);
-      return;
-    }
-    const girth = calculateGirth(caliperReading);
-    const girthCm = girthToCm(girth);
-    const recommendation = getRecommendation(girthCm);
+    let caliperVal;
+    let girth;
+    let girthCm;
+    let recommendation;
+    let abnormalFlag = false;
+    let abnormalReason = null;
 
-    // Get current session girths for abnormal check
-    let sessionGirths = [];
-    if (currentSettings.sessionId) {
-       const sessionMeasurements = await db.measurements.where('sessionId').equals(currentSettings.sessionId).toArray();
-       sessionGirths = sessionMeasurements.map(m => parseFloat(m.girth));
-    }
-    
-    const { abnormalFlag, abnormalReason } = checkAbnormal(girth, sessionGirths);
-    if (abnormalFlag) {
-       setAbnormalWarning(`Abnormal reading: ${abnormalReason}`);
-       setTimeout(() => setAbnormalWarning(''), 5000);
+    if (activeCondition === 'healthy' || activeCondition === 'runt') {
+      if (caliperReading == null || isNaN(caliperReading) || caliperReading <= 0) {
+        setRangeError('Girth measurement is required for healthy and runt trees.');
+        setTimeout(() => setRangeError(''), 3000);
+        return;
+      }
+      if (caliperReading < MIN_READING || caliperReading > MAX_READING) {
+        if (currentSettings.audioConfirmationEnabled) playBeep('error');
+        setRangeError(`Reading ${caliperReading}" outside valid range (${MIN_READING}-${MAX_READING}"). Ignored.`);
+        setTimeout(() => setRangeError(''), 3000);
+        return;
+      }
+
+      const calculatedGirth = calculateGirth(caliperReading);
+      const calculatedGirthCm = girthToCm(calculatedGirth);
+      const calculatedRecommendation = getRecommendation(calculatedGirthCm);
+
+      caliperVal = caliperReading;
+      girth = calculatedGirth;
+      girthCm = calculatedGirthCm;
+      recommendation = calculatedRecommendation;
+
+      if (activeCondition === 'runt') {
+        abnormalFlag = true;
+        abnormalReason = 'Runt Tree';
+      } else {
+        let sessionGirths = [];
+        if (currentSettings.sessionId) {
+          const sessionMeasurements = await db.measurements.where('sessionId').equals(currentSettings.sessionId).toArray();
+          sessionGirths = sessionMeasurements.map(m => parseFloat(m.girth)).filter(g => !isNaN(g) && g > 0);
+        }
+        const abResult = checkAbnormal(girth, sessionGirths);
+        abnormalFlag = abResult.abnormalFlag;
+        abnormalReason = abResult.abnormalReason;
+        if (abnormalFlag) {
+          setAbnormalWarning(`Abnormal reading: ${abnormalReason}`);
+          setTimeout(() => setAbnormalWarning(''), 5000);
+        }
+      }
+    } else if (activeCondition === 'dead' || activeCondition === 'damaged') {
+      if (!activeNote) {
+        setRangeError('Condition note is required for dead or damaged trees.');
+        setTimeout(() => setRangeError(''), 3000);
+        return;
+      }
+      caliperVal = null;
+      girth = null;
+      girthCm = null;
+      recommendation = {
+        status: activeCondition,
+        text: activeCondition === 'dead' ? 'Dead Tree' : 'Damaged Tree'
+      };
+    } else {
+      return;
     }
 
     const loc = ENABLE_GPS_TAGGING ? getLastKnownLocation() : { latitude: null, longitude: null, accuracy: null, status: 'unavailable', googleMapLink: null };
 
-    // Look up fieldId from config
     let fieldId = null;
     if (configFields.length > 0) {
-       const f = configFields.find(fld => fld.field_code === currentSettings.fieldNo);
-       if (f) fieldId = f.id;
+      const f = configFields.find(fld => fld.field_code === currentSettings.fieldNo);
+      if (f) fieldId = f.id;
     }
 
     const duplicate = await checkDuplicateInDexie(
@@ -519,72 +562,69 @@ function getFriendlySyncErrorMessage(errorObj) {
       currentSettings.treeNo
     );
 
-    if (duplicate) {
-      if (!window.confirm(`Tree #${currentSettings.treeNo} has already been measured in this field (${duplicate.girth}"). Do you want to overwrite it?`)) {
-        return; // user cancelled
-      }
-      
-      // Update existing
-      await db.measurements.update(duplicate.id, {
-        fieldId,
-        caliperReading,
-        girth,
-        girthCm,
-        recommendationStatus: recommendation.status,
-        recommendationText: recommendation.text,
-        abnormalFlag,
-        abnormalReason,
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        gpsAccuracy: loc.accuracy,
-        gpsStatus: loc.status,
-        googleMapLink: loc.googleMapLink,
-        timestamp: new Date().toISOString(),
-        syncStatus: 'pending'
-      });
-    } else {
-      const newMeasurement = {
-        fieldId,
-        estate: currentSettings.estate,
-        division: currentSettings.division,
-        fieldNo: currentSettings.fieldNo,
-        extent: parseFloat(currentSettings.extent),
-        treeNo: parseInt(currentSettings.treeNo),
-        operatorName: currentSettings.operatorName,
-        sessionId: currentSettings.sessionId,
-        caliperReading,
-        girth,
-        girthCm,
-        recommendationStatus: recommendation.status,
-        recommendationText: recommendation.text,
-        abnormalFlag,
-        abnormalReason,
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        gpsAccuracy: loc.accuracy,
-        gpsStatus: loc.status,
-        googleMapLink: loc.googleMapLink,
-        timestamp: new Date().toISOString(),
-        syncStatus: 'pending'
-      };
+    const measurementPayload = {
+      fieldId,
+      estate: currentSettings.estate,
+      division: currentSettings.division,
+      fieldNo: currentSettings.fieldNo,
+      extent: parseFloat(currentSettings.extent),
+      treeNo: parseInt(currentSettings.treeNo),
+      operatorName: currentSettings.operatorName,
+      sessionId: currentSettings.sessionId,
+      caliperReading: caliperVal,
+      girth,
+      girthCm,
+      treeCondition: activeCondition,
+      conditionNote: activeNote || null,
+      recommendationStatus: recommendation.status,
+      recommendationText: recommendation.text,
+      abnormalFlag,
+      abnormalReason,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      gpsAccuracy: loc.accuracy,
+      gpsStatus: loc.status,
+      googleMapLink: loc.googleMapLink,
+      timestamp: new Date().toISOString(),
+      syncStatus: 'pending'
+    };
 
-      await db.measurements.add(newMeasurement);
+    if (duplicate) {
+      if (!window.confirm(`Tree #${currentSettings.treeNo} has already been measured in this field. Do you want to overwrite it?`)) {
+        return;
+      }
+      await db.measurements.update(duplicate.id, measurementPayload);
+    } else {
+      await db.measurements.add(measurementPayload);
     }
-    
+
     if ('vibrate' in navigator) navigator.vibrate([100]);
     if (currentSettings.audioConfirmationEnabled) playBeep('success');
     setSuccessFlash(true);
     setTimeout(() => setSuccessFlash(false), 300);
 
+    let summaryMsg = `Tree #${currentSettings.treeNo}: `;
+    if (activeCondition === 'healthy') summaryMsg += `Healthy - ${girth}" (${girthCm} cm)`;
+    else if (activeCondition === 'runt') summaryMsg += `Runt - ${girth}" (${girthCm} cm)`;
+    else if (activeCondition === 'dead') summaryMsg += `Dead - No girth recorded (${activeNote})`;
+    else summaryMsg += `Damaged - No girth recorded (${activeNote})`;
+
+    setSaveSummaryToast(summaryMsg);
+    setTimeout(() => setSaveSummaryToast(''), 4000);
+
+    setManualEntry('');
+    setConditionNote('');
+    setTreeCondition('healthy');
+
     const nextTreeNo = parseInt(currentSettings.treeNo) + 1;
     const newSettings = { ...currentSettings, treeNo: nextTreeNo };
     setSettings(newSettings);
-        await db.settings.put({id: 1, ...newSettings});
+    await db.settings.put({id: 1, ...newSettings});
 
-      if (navigator.onLine && !authError) {
-        syncPending().catch(console.error);
-      }
-    }, [syncPending, authError, configFields]);
+    if (navigator.onLine && !authError) {
+      syncPending().catch(console.error);
+    }
+  }, [syncPending, authError, configFields, treeCondition, conditionNote]);
 
   useEffect(() => {
     if (!isSetupComplete) return;
@@ -699,7 +739,7 @@ function getFriendlySyncErrorMessage(errorObj) {
 
       const newTreeNo = lastMeasurement.treeNo;
       const newSettings = { ...currentSettings, treeNo: newTreeNo };
-      // Update ref immediately — before any await — so rapid successive undos read the updated value
+      // Update ref immediately - before any await - so rapid successive undos read the updated value
       settingsRef.current = newSettings;
       setSettings(newSettings);
 
@@ -735,11 +775,16 @@ function getFriendlySyncErrorMessage(errorObj) {
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    const value = parseCaliperBuffer(manualEntry);
-
-    if (value !== null) {
-      saveMeasurement(value);
-      setManualEntry('');
+    if (treeCondition === 'dead' || treeCondition === 'damaged') {
+      saveMeasurement(null);
+    } else {
+      const value = parseCaliperBuffer(manualEntry);
+      if (value !== null) {
+        saveMeasurement(value);
+      } else {
+        setRangeError('Please enter a valid numeric caliper reading.');
+        setTimeout(() => setRangeError(''), 3000);
+      }
     }
   };
 
@@ -749,9 +794,9 @@ function getFriendlySyncErrorMessage(errorObj) {
       alert("No data to export");
       return;
     }
-    const headers = "id,estate,division,fieldNo,extent,treeNo,operatorName,sessionId,caliperReading,girth,girthCm,recommendationStatus,abnormalFlag,latitude,longitude,timestamp,syncStatus\n";
+    const headers = "id,estate,division,fieldNo,extent,treeNo,operatorName,sessionId,treeCondition,conditionNote,caliperReading,girth,girthCm,recommendationStatus,abnormalFlag,latitude,longitude,timestamp,syncStatus\n";
     const rows = all.map(m =>
-      [m.id, escCsv(m.estate), escCsv(m.division), escCsv(m.fieldNo), m.extent, m.treeNo, escCsv(m.operatorName), escCsv(m.sessionId), m.caliperReading, m.girth, m.girthCm, escCsv(m.recommendationStatus), m.abnormalFlag, m.latitude, m.longitude, escCsv(m.timestamp), m.syncStatus].join(',')
+      [m.id, escCsv(m.estate), escCsv(m.division), escCsv(m.fieldNo), m.extent, m.treeNo, escCsv(m.operatorName), escCsv(m.sessionId), escCsv(m.treeCondition || 'healthy'), escCsv(m.conditionNote || ''), m.caliperReading, m.girth, m.girthCm, escCsv(m.recommendationStatus), m.abnormalFlag, m.latitude, m.longitude, escCsv(m.timestamp), m.syncStatus].join(',')
     ).join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -761,13 +806,42 @@ function getFriendlySyncErrorMessage(errorObj) {
     a.click();
   };
   
-  const forceRefresh = () => {
+  const forceRefresh = async () => {
     if (!refreshConfirm) {
       setRefreshConfirm(true);
       setTimeout(() => setRefreshConfirm(false), 4000);
       return;
     }
-    window.location.reload();
+    try {
+      if (navigator.onLine) {
+        const { fetchFieldConfig, checkAccessViaSupabase } = await import('./services/supabaseSync');
+        const { getLocalAccessStatus, saveAccessStatus } = await import('./services/accessControl');
+        const local = await getLocalAccessStatus();
+
+        if (local.requestId) {
+          const accessRes = await checkAccessViaSupabase(local.requestId, settings.deviceId || local.deviceId);
+          if (accessRes && accessRes.success === false && (accessRes.errorType === 'request_not_found' || accessRes.errorType === 'device_not_found' || accessRes.errorType === 'device_revoked')) {
+            await saveAccessStatus({ accessStatus: null, deviceToken: null, requestId: null, approvedAt: null, expiresAt: null });
+            window.location.reload();
+            return;
+          }
+        }
+
+        const confRes = await fetchFieldConfig(0);
+        if (confRes.success && confRes.estates) {
+          await db.fieldConfig.put({
+            id: 1,
+            version: confRes.configVersion,
+            estates: confRes.estates,
+            divisions: confRes.divisions,
+            fields: confRes.fields
+          });
+        }
+      }
+      window.location.reload();
+    } catch {
+      window.location.reload();
+    }
   };
 
   const recentMeasurements = useLiveQuery(
@@ -1078,9 +1152,15 @@ function getFriendlySyncErrorMessage(errorObj) {
          </div>
       )}
 
+      {saveSummaryToast && (
+        <div className="warning-banner" style={{background: 'rgba(34, 197, 94, 0.15)', borderColor: '#22c55e', color: '#22c55e'}}>
+          ✓ {saveSummaryToast}
+        </div>
+      )}
+
       {syncError && (
         <div className="warning-banner" style={{background: 'rgba(239, 68, 68, 0.15)', borderColor: 'var(--accent-danger)', color: 'var(--accent-danger)', cursor: 'pointer'}} onClick={retryFailed}>
-          <AlertTriangle size={16} /> {syncError} — Tap to retry
+          <AlertTriangle size={16} /> {syncError} - Tap to retry
         </div>
       )}
 
@@ -1135,24 +1215,79 @@ function getFriendlySyncErrorMessage(errorObj) {
           </button>
         </div>
 
-        {/* Manual Fallback */}
-        <form onSubmit={handleManualSubmit} className="manual-entry-form">
-          <label className="text-muted" style={{fontSize: '0.8rem'}}><Edit3 size={14} style={{display: 'inline', verticalAlign: 'text-bottom'}}/> Manual Entry</label>
-          <div style={{display: 'flex', gap: '0.5rem'}}>
-            <input 
-              type="number" 
-              step="0.01" 
-              placeholder="Caliper Reading" 
-              value={manualEntry}
-              onChange={(e) => setManualEntry(e.target.value)}
-              style={{flex: 1}}
-            />
-            <button type="submit" className="btn" style={{width: 'auto', padding: '0 1rem'}}>Save</button>
+        {/* Tree Condition Selector */}
+        <div style={{ marginTop: '1.2rem', marginBottom: '1rem', padding: '0.8rem', background: 'var(--bg-secondary)', borderRadius: '8px' }}>
+          <label className="text-muted" style={{ fontSize: '0.8rem', display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>
+            Tree Condition
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+            {[
+              { id: 'healthy', label: '🌿 Healthy' },
+              { id: 'runt', label: '📉 Runt' },
+              { id: 'dead', label: '☠️ Dead' },
+              { id: 'damaged', label: '🩹 Damaged' }
+            ].map(cond => (
+              <button
+                key={cond.id}
+                type="button"
+                className={`btn ${treeCondition === cond.id ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => {
+                  setTreeCondition(cond.id);
+                  if (cond.id === 'dead' || cond.id === 'damaged') {
+                    setManualEntry('');
+                  }
+                }}
+                style={{ padding: '0.4rem 0.2rem', fontSize: '0.8rem', textAlign: 'center' }}
+              >
+                {cond.label}
+              </button>
+            ))}
           </div>
+          {treeCondition === 'runt' && (
+            <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--accent-pending)' }}>
+              ⚠️ Marked as Runt tree. Measurable with positive girth, counted in averages.
+            </div>
+          )}
+        </div>
+
+        {/* Manual Fallback / Condition Note Form */}
+        <form onSubmit={handleManualSubmit} className="manual-entry-form">
+          {(treeCondition === 'healthy' || treeCondition === 'runt') ? (
+            <>
+              <label className="text-muted" style={{fontSize: '0.8rem'}}><Edit3 size={14} style={{display: 'inline', verticalAlign: 'text-bottom'}}/> Manual Caliper Entry</label>
+              <div style={{display: 'flex', gap: '0.5rem'}}>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="Caliper Reading (in)" 
+                  value={manualEntry}
+                  onChange={(e) => setManualEntry(e.target.value)}
+                  style={{flex: 1}}
+                />
+                <button type="submit" className="btn" style={{width: 'auto', padding: '0 1rem'}}>Save</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="text-muted" style={{fontSize: '0.8rem', color: 'var(--accent-danger)'}}>
+                <Edit3 size={14} style={{display: 'inline', verticalAlign: 'text-bottom'}}/> Condition Note (Required for {treeCondition}) *
+              </label>
+              <div style={{display: 'flex', gap: '0.5rem'}}>
+                <input 
+                  type="text" 
+                  placeholder={treeCondition === 'dead' ? 'e.g. Fallen tree, trunk rot' : 'e.g. Porcupine damage, deer attack, snapped top'} 
+                  value={conditionNote}
+                  onChange={(e) => setConditionNote(e.target.value)}
+                  style={{flex: 1}}
+                />
+                <button type="submit" className="btn btn-danger" style={{width: 'auto', padding: '0 1rem'}} disabled={!conditionNote.trim()}>
+                  Save {treeCondition === 'dead' ? 'Dead' : 'Damaged'}
+                </button>
+              </div>
+            </>
+          )}
         </form>
       </div>
-
-
 
       <div className="stat-grid">
         <div className="stat-box" onClick={syncPending} style={{cursor: isOnline && !authError ? 'pointer' : 'default'}}>
@@ -1200,22 +1335,38 @@ function getFriendlySyncErrorMessage(errorObj) {
         {recentMeasurements && recentMeasurements.length > 0 ? (
           <div className="measurement-list-container">
             <div className="measurement-list">
-              {recentMeasurements.map((m) => (
-                <div key={m.id} className={`measurement-item ${m.syncStatus}`}>
-                  <div className="measurement-details">
-                    <span className="measurement-main">Tree #{m.treeNo} - {m.girth} in</span>
-                    <span className="measurement-sub">Caliper: {m.caliperReading} in | Field: {m.fieldNo}</span>
+              {recentMeasurements.map((m) => {
+                const cond = m.treeCondition || 'healthy';
+                const isMeasurable = cond === 'healthy' || cond === 'runt';
+                const mainText = isMeasurable
+                  ? `Tree #${m.treeNo} - ${m.girth}" (${cond === 'runt' ? 'Runt' : 'Healthy'})`
+                  : `Tree #${m.treeNo} - ${cond === 'dead' ? 'Dead' : 'Damaged'} (No Girth)`;
+                const subText = isMeasurable
+                  ? `Caliper: ${m.caliperReading}" | Field: ${m.fieldNo}`
+                  : `Note: ${m.conditionNote || 'N/A'} | Field: ${m.fieldNo}`;
+
+                return (
+                  <div key={m.id} className={`measurement-item ${m.syncStatus}`}>
+                    <div className="measurement-details">
+                      <span className="measurement-main">{mainText}</span>
+                      <span className="measurement-sub">{subText}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.3rem' }}>
+                      <span className={`badge ${m.syncStatus}`}>{m.syncStatus}</span>
+                      {cond !== 'healthy' && (
+                        <span className={`badge ${cond === 'runt' ? 'pending' : 'error'}`} style={{ textTransform: 'capitalize' }}>
+                          {cond}
+                        </span>
+                      )}
+                      {m.recommendationStatus && isMeasurable && m.recommendationStatus !== 'not_ready' && (
+                         <span className={`badge ${m.recommendationStatus === 'tappable' ? 'synced' : 'pending'}`}>
+                            {m.recommendationStatus === 'tappable' ? 'Tappable' : 'Approaching'}
+                         </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.3rem' }}>
-                    <span className={`badge ${m.syncStatus}`}>{m.syncStatus}</span>
-                    {m.recommendationStatus && m.recommendationStatus !== 'not_ready' && (
-                       <span className={`badge ${m.recommendationStatus === 'tappable' ? 'synced' : 'pending'}`}>
-                          {m.recommendationStatus === 'tappable' ? 'Tappable' : 'Approaching'}
-                       </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : (

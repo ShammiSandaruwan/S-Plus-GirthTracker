@@ -125,6 +125,8 @@ serve(async (req) => {
       caliperReading: r.caliper_reading,
       girth: r.girth,
       girthCm: r.girth_cm,
+      treeCondition: r.tree_condition || 'healthy',
+      conditionNote: r.condition_note || null,
       recommendationStatus: r.recommendation_status,
       recommendationText: r.recommendation_text,
       abnormalFlag: r.abnormal_flag,

@@ -63,7 +63,7 @@ function DevicesTab({ token, onAuthError }) {
     setError('');
     try {
       const { adminCRUD } = await import('../services/supabaseSync');
-      const data = await adminCRUD(token, 'list_devices');
+      const data = await adminCRUD(token, 'list_devices', { cacheBust: Date.now() });
       if (data.success) {
         // Map snake_case to camelCase
         const mappedDevices = (data.devices || []).map(d => ({
@@ -115,7 +115,7 @@ function DevicesTab({ token, onAuthError }) {
   };
 
   const formatDate = (val) => {
-    if (!val) return '—';
+    if (!val) return '-';
     try { return new Date(val).toLocaleString(); } catch { return String(val); }
   };
 
@@ -176,8 +176,8 @@ function DevicesTab({ token, onAuthError }) {
               <tbody>
                 {activeDevices.map((d, i) => (
                   <tr key={d.deviceIdHash || i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.5rem' }}>{d.operatorName || '—'}</td>
-                    <td style={{ padding: '0.5rem' }}>{d.estate || '—'}</td>
+                    <td style={{ padding: '0.5rem' }}>{d.operatorName || '-'}</td>
+                    <td style={{ padding: '0.5rem' }}>{d.estate || '-'}</td>
                     <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>{formatDate(d.approvedAt)}</td>
                     <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>{formatDate(d.lastSeenAt)}</td>
                     <td style={{ padding: '0.5rem', textAlign: 'center' }}>
@@ -209,8 +209,8 @@ function DevicesTab({ token, onAuthError }) {
               <tbody>
                 {revokedDevices.map((d, i) => (
                   <tr key={d.deviceIdHash || i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.4rem' }}>{d.operatorName || '—'}</td>
-                    <td style={{ padding: '0.4rem' }}>{d.estate || '—'}</td>
+                    <td style={{ padding: '0.4rem' }}>{d.operatorName || '-'}</td>
+                    <td style={{ padding: '0.4rem' }}>{d.estate || '-'}</td>
                     <td style={{ padding: '0.4rem', color: '#f44336' }}>Revoked</td>
                   </tr>
                 ))}
@@ -519,24 +519,31 @@ export default function AdminPage() {
     
     const est = estates.find(e => e.id === selectedEstateId);
     const fld = fields.find(f => f.id === fieldNoFilterId);
+    const div = divisions.find(d => d.id === divisionFilterId);
 
-    if (!window.confirm(`Are you sure you want to export Field ${fld?.field_code} for Estate ${est?.name}? This will replace any existing sheet data for this field.`)) {
+    if (!window.confirm(`Export data for Field ${fld?.field_code} in Estate ${est?.name} to its mapped Google Sheet? New rows will be added after existing data.`)) {
       return;
     }
+
+    const exportRequestId = `EXP-REQ-${crypto.randomUUID()}`;
 
     setExporting(true);
     setError('');
     try {
       const result = await triggerAdminExport(token, {
         estate_id: selectedEstateId,
+        estate: est?.name || est?.code,
         division_id: divisionFilterId,
+        division: div?.name || div?.code,
         field_id: fieldNoFilterId,
+        fieldNo: fld?.field_code,
         dateFrom,
-        dateTo
+        dateTo,
+        export_request_id: exportRequestId
       });
       
       if (result.success) {
-        alert(`Export successful! ${result.rowCount} records updated in Google Sheets.`);
+        alert(result.message || `Export successful! ${result.exportedCount || result.rowCount || 0} records exported to Google Sheets.`);
         // Reload to show exportedAt tags
         await loadData();
       }

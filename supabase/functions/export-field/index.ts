@@ -19,12 +19,20 @@ serve(async (req) => {
       });
     }
 
-    const { estate, division, fieldNo } = await req.json();
-    if (!estate || !fieldNo) {
-      return new Response(JSON.stringify({ error: 'Estate and Field No are required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    const body = await req.json();
+    const {
+      estate: inputEstate,
+      division: inputDivision,
+      fieldNo: inputFieldNo,
+      estate_id: inputEstateId,
+      division_id: inputDivisionId,
+      field_id: inputFieldId,
+      dateFrom,
+      dateTo,
+      export_request_id: inputExportRequestId
+    } = body;
+
+    const exportRequestId = inputExportRequestId || `EXP-REQ-${crypto.randomUUID()}`;
 
     const gasUrl = Deno.env.get('GAS_URL') || '';
     const gasSharedSecret = Deno.env.get('GAS_SHARED_SECRET') || '';
@@ -59,59 +67,170 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     );
 
-    // 2. Look up spreadsheet mapping from estate_sheet_exports
-    let spreadsheetId = null;
-    let tabName = 'Sheet1';
-    
-    // First, resolve the estate_id
-    const { data: estateData } = await supabaseAdmin
-      .from('estates')
-      .select('id')
-      .eq('code', estate)
-      .single();
+    // 2. Resolve canonical estate, division, and field identifiers
+    let estateId = inputEstateId || null;
+    let estateName = inputEstate || null;
+    let estateCode = null;
 
-    if (estateData) {
-      const { data: mapping } = await supabaseAdmin
-        .from('estate_sheet_exports')
-        .select('spreadsheet_id, tab_name')
-        .eq('estate_id', estateData.id)
-        .eq('active', true)
-        .single();
-        
-      if (mapping) {
-        spreadsheetId = mapping.spreadsheet_id;
-        tabName = mapping.tab_name;
+    if (estateId) {
+      const { data: estData } = await supabaseAdmin
+        .from('estates')
+        .select('id, name, code')
+        .eq('id', estateId)
+        .maybeSingle();
+      if (estData) {
+        estateName = estData.name;
+        estateCode = estData.code;
+      }
+    } else if (inputEstate) {
+      const { data: estData } = await supabaseAdmin
+        .from('estates')
+        .select('id, name, code')
+        .or(`code.eq.${inputEstate},name.eq.${inputEstate}`)
+        .maybeSingle();
+      if (estData) {
+        estateId = estData.id;
+        estateName = estData.name;
+        estateCode = estData.code;
       }
     }
 
-    // 3. Fetch measurements
-    const { data: measurements, error: fetchErr } = await supabaseAdmin
+    if (!estateId && !estateName) {
+      return new Response(JSON.stringify({ error: 'Estate is required for export' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    let fieldId = inputFieldId || null;
+    let fieldCode = inputFieldNo || null;
+    let fieldDivisionId = inputDivisionId || null;
+
+    if (fieldId) {
+      const { data: fldData } = await supabaseAdmin
+        .from('fields')
+        .select('id, field_code, division_id, estate_id')
+        .eq('id', fieldId)
+        .maybeSingle();
+      if (fldData) {
+        fieldCode = fldData.field_code;
+        if (!estateId) estateId = fldData.estate_id;
+        if (!fieldDivisionId) fieldDivisionId = fldData.division_id;
+      }
+    } else if (inputFieldNo && estateId) {
+      const { data: fldData } = await supabaseAdmin
+        .from('fields')
+        .select('id, field_code, division_id, estate_id')
+        .eq('estate_id', estateId)
+        .eq('field_code', inputFieldNo)
+        .maybeSingle();
+      if (fldData) {
+        fieldId = fldData.id;
+        fieldCode = fldData.field_code;
+        if (!fieldDivisionId) fieldDivisionId = fldData.division_id;
+      }
+    }
+
+    if (!fieldCode) {
+      return new Response(JSON.stringify({ error: 'Field No is required for export' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    let divisionCode = inputDivision || null;
+    if (fieldDivisionId) {
+      const { data: divData } = await supabaseAdmin
+        .from('divisions')
+        .select('id, name, code')
+        .eq('id', fieldDivisionId)
+        .maybeSingle();
+      if (divData) {
+        divisionCode = divData.code || divData.name;
+      }
+    }
+
+    // 3. Resolve spreadsheet mapping exclusively from estate_sheet_exports
+    if (!estateId) {
+      return new Response(JSON.stringify({ error: 'No active Google Sheet mapping exists for this estate.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const { data: mapping } = await supabaseAdmin
+      .from('estate_sheet_exports')
+      .select('spreadsheet_id, tab_name, active')
+      .eq('estate_id', estateId)
+      .eq('active', true)
+      .maybeSingle();
+
+    if (!mapping || !mapping.spreadsheet_id) {
+      return new Response(JSON.stringify({ error: 'No active Google Sheet mapping exists for this estate.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const spreadsheetId = mapping.spreadsheet_id;
+    const tabName = mapping.tab_name || 'Sheet1';
+
+    // 4. Fetch measurements
+    let query = supabaseAdmin
       .from('census_measurements')
-      .select('*')
-      .eq('estate', estate)
-      .eq('division', division)
-      .eq('field_no', fieldNo)
-      .order('tree_no', { ascending: true });
+      .select('*');
+
+    if (fieldId) {
+      query = query.eq('field_id', fieldId);
+    } else {
+      if (estateCode || estateName) {
+        const estateVals = Array.from(new Set([estateCode, estateName].filter(Boolean)));
+        query = query.in('estate', estateVals);
+      }
+      if (fieldCode) {
+        query = query.eq('field_no', fieldCode);
+      }
+      if (divisionCode) {
+        query = query.eq('division', divisionCode);
+      }
+    }
+
+    if (dateFrom) query = query.gte('measured_at', dateFrom);
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      query = query.lte('measured_at', toDate.toISOString());
+    }
+
+    const { data: measurements, error: fetchErr } = await query.order('tree_no', { ascending: true });
 
     if (fetchErr) throw fetchErr;
 
     if (!measurements || measurements.length === 0) {
-      return new Response(JSON.stringify({ success: true, message: 'No measurements found for this field' }), {
+      return new Response(JSON.stringify({ success: true, message: 'No measurements found for this field', rowCount: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // 4. Send to GAS for export
-    // We pass spreadsheetId if we found it. GAS will fall back to its internal map if not provided.
+    // Safe diagnostic logging (no credentials or tokens)
+    console.log("Initiating export batch:", {
+      fieldId,
+      estateId,
+      estateName,
+      fieldCode,
+      spreadsheetIdResolved: true,
+      tabName,
+      exportRequestId,
+      rowCount: measurements.length
+    });
+
+    // 5. Send payload to Google Apps Script
     const exportPayload = JSON.stringify({
       action: 'export_to_sheet',
-      gasSharedSecret, // Use shared secret instead of adminSessionToken for auth
-      estate,
-      division,
-      fieldNo,
+      gasSharedSecret,
+      estate: estateName || estateCode,
+      division: divisionCode || '',
+      fieldNo: fieldCode,
       rows: measurements,
-      spreadsheetId, // Optional: if present, GAS uses it instead of hardcoded map
-      tabName,       // Optional
+      spreadsheetId,
+      tabName,
+      export_request_id: exportRequestId,
     });
 
     const exportRes = await fetch(gasUrl, {
@@ -125,7 +244,7 @@ serve(async (req) => {
       throw new Error(`Export failed: ${exportResult.error}`);
     }
 
-    // 5. Mark as exported
+    // 6. Mark measurements as exported
     const batchId = `EXP-${crypto.randomUUID()}`;
     const exportedAt = new Date().toISOString();
 
@@ -136,23 +255,24 @@ serve(async (req) => {
       .in('id', ids);
 
     if (updateErr) {
-       console.error("Failed to mark as exported in Supabase:", updateErr);
-       // We still return success since the export itself succeeded, but log the error
+       console.error("Failed to mark measurements as exported in Supabase:", updateErr);
     }
     
-    // 6. Update mapping last_exported_at
-    if (estateData) {
-       await supabaseAdmin
-         .from('estate_sheet_exports')
-         .update({ last_exported_at: exportedAt })
-         .eq('estate_id', estateData.id);
-    }
+    // 7. Update mapping last_exported_at
+    await supabaseAdmin
+      .from('estate_sheet_exports')
+      .update({ last_exported_at: exportedAt })
+      .eq('estate_id', estateId);
 
     return new Response(JSON.stringify({ 
       success: true, 
-      message: `Exported ${measurements.length} records successfully.`,
+      message: exportResult.isDuplicate 
+        ? `Export request ${exportRequestId} was already processed.` 
+        : `Exported ${measurements.length} records successfully to tab '${tabName}'.`,
       exportedCount: measurements.length,
-      usedSupabaseMapping: !!spreadsheetId
+      destinationTab: tabName,
+      exportRequestId: exportRequestId,
+      isDuplicate: !!exportResult.isDuplicate
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -163,3 +283,4 @@ serve(async (req) => {
     });
   }
 });
+

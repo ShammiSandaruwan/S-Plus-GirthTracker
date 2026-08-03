@@ -3,13 +3,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, cache-control',
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
 };
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  const fetchedAt = new Date().toISOString();
 
   try {
     const supabaseAdmin = createClient(
@@ -20,7 +23,7 @@ serve(async (req) => {
     const { requestId, deviceId } = await req.json();
 
     if (!requestId || !deviceId) {
-      return new Response(JSON.stringify({ error: 'Missing requestId or deviceId' }), {
+      return new Response(JSON.stringify({ error: 'Missing requestId or deviceId', fetched_at: fetchedAt }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -37,44 +40,47 @@ serve(async (req) => {
       .select('*')
       .eq('request_id', requestId)
       .eq('device_id_hash', deviceIdHash)
-      .single();
+      .maybeSingle();
 
     if (error || !request) {
-      return new Response(JSON.stringify({ success: false, error: 'Request not found.' }), {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Request not found.',
+        errorType: 'request_not_found',
+        fetched_at: fetchedAt
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     if (request.status === 'pending') {
-      return new Response(JSON.stringify({ success: true, status: 'pending' }), {
+      return new Response(JSON.stringify({ success: true, status: 'pending', fetched_at: fetchedAt }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     if (request.status === 'denied') {
       return new Response(JSON.stringify({
-        success: true, status: 'denied', message: 'Access request denied.'
+        success: true, status: 'denied', message: 'Access request denied.', fetched_at: fetchedAt
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (request.status === 'approved') {
-      // Look up approved device to get token
-      // Token is returned via a one-time read from approved_devices
-      // The raw token was generated during approval and stored temporarily
       const { data: device } = await supabaseAdmin
         .from('approved_devices')
-        .select('estate_code, operator_name')
+        .select('estate_code, operator_name, revoked')
         .eq('device_id_hash', deviceIdHash)
-        .single();
+        .maybeSingle();
 
-      if (!device) {
+      if (!device || device.revoked) {
         return new Response(JSON.stringify({
-          success: false, error: 'Approved device record not found.'
+          success: false,
+          error: device?.revoked ? 'Device revoked.' : 'Approved device record not found.',
+          errorType: device?.revoked ? 'device_revoked' : 'device_not_found',
+          fetched_at: fetchedAt
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // Deliver the raw device token exactly once, then clear it so it
-      // can never be read from the database again.
       let deviceToken = null;
       if (request.pending_token) {
         deviceToken = request.pending_token;
@@ -93,16 +99,18 @@ serve(async (req) => {
         expiresAt: '',
         deviceToken,
         needsTokenFromApproval: !deviceToken,
+        fetched_at: fetchedAt,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    return new Response(JSON.stringify({ success: false, error: 'Unknown status.' }), {
+    return new Response(JSON.stringify({ success: false, error: 'Unknown status.', fetched_at: fetchedAt }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: err.message, fetched_at: fetchedAt }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });
+

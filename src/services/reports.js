@@ -24,19 +24,36 @@ function sanitizeShareText(text) {
  */
 export function generateSessionReport({ estate, division, fieldNo, extent, operatorName, sessionId, sessionStartedAt, sessionLocation, measurements }) {
   const total = measurements.length;
-  const girths = measurements.map(m => parseFloat(m.girth)).filter(g => !isNaN(g) && g > 0);
-  const girthsCm = measurements.map(m => parseFloat(m.girthCm)).filter(g => !isNaN(g) && g > 0);
+  
+  const healthyCount = measurements.filter(m => (m.treeCondition || 'healthy') === 'healthy').length;
+  const runtCount = measurements.filter(m => m.treeCondition === 'runt').length;
+  const deadCount = measurements.filter(m => m.treeCondition === 'dead').length;
+  const damagedCount = measurements.filter(m => m.treeCondition === 'damaged' || m.treeCondition === 'animal_attack').length;
 
-  const avg = girths.length > 0 ? parseFloat((girths.reduce((s, v) => s + v, 0) / girths.length).toFixed(2)) : 0;
-  const min = girths.length > 0 ? parseFloat(Math.min(...girths).toFixed(2)) : 0;
-  const max = girths.length > 0 ? parseFloat(Math.max(...girths).toFixed(2)) : 0;
+  const validGirths = measurements
+    .filter(m => {
+      const cond = m.treeCondition || 'healthy';
+      return (cond === 'healthy' || cond === 'runt') && m.girth != null && !isNaN(parseFloat(m.girth)) && parseFloat(m.girth) > 0;
+    })
+    .map(m => parseFloat(m.girth));
 
-  const avgCm = girthsCm.length > 0 ? parseFloat((girthsCm.reduce((s, v) => s + v, 0) / girthsCm.length).toFixed(2)) : 0;
+  const validGirthsCm = measurements
+    .filter(m => {
+      const cond = m.treeCondition || 'healthy';
+      return (cond === 'healthy' || cond === 'runt') && m.girthCm != null && !isNaN(parseFloat(m.girthCm)) && parseFloat(m.girthCm) > 0;
+    })
+    .map(m => parseFloat(m.girthCm));
+
+  const avg = validGirths.length > 0 ? parseFloat((validGirths.reduce((s, v) => s + v, 0) / validGirths.length).toFixed(2)) : 0;
+  const min = validGirths.length > 0 ? parseFloat(Math.min(...validGirths).toFixed(2)) : 0;
+  const max = validGirths.length > 0 ? parseFloat(Math.max(...validGirths).toFixed(2)) : 0;
+
+  const avgCm = validGirthsCm.length > 0 ? parseFloat((validGirthsCm.reduce((s, v) => s + v, 0) / validGirthsCm.length).toFixed(2)) : 0;
 
   const tappable = measurements.filter(m => m.recommendationStatus === 'tappable').length;
   const approaching = measurements.filter(m => m.recommendationStatus === 'approaching').length;
   const belowThreshold = measurements.filter(m => m.recommendationStatus === 'not_ready').length;
-  const abnormalCount = measurements.filter(m => m.abnormalFlag).length;
+  const abnormalCount = measurements.filter(m => m.abnormalFlag || m.treeCondition === 'runt').length;
   const pendingSync = measurements.filter(m => m.syncStatus === 'pending').length;
   const synced = measurements.filter(m => m.syncStatus === 'synced').length;
 
@@ -51,6 +68,11 @@ export function generateSessionReport({ estate, division, fieldNo, extent, opera
     reportGeneratedAt: new Date().toISOString(),
     sessionLocation,
     total,
+    totalMeasurable: validGirths.length,
+    healthyCount,
+    runtCount,
+    deadCount,
+    damagedCount,
     avg,
     avgCm,
     min,
@@ -80,8 +102,11 @@ export function formatReportText(report) {
     `Started: ${report.sessionStartedAt ? new Date(report.sessionStartedAt).toLocaleString() : 'N/A'}`,
     `Report: ${new Date(report.reportGeneratedAt).toLocaleString()}`,
     '',
-    `${EMOJI.measurement} *Measurements*`,
-    `Total: ${report.total}`,
+    `${EMOJI.measurement} *Measurements & Conditions*`,
+    `Total Observed: ${report.total}`,
+    `Measurable Trees: ${report.totalMeasurable}`,
+    `Healthy: ${report.healthyCount} | Runt: ${report.runtCount}`,
+    `Dead: ${report.deadCount} | Damaged: ${report.damagedCount}`,
     `Avg Girth: ${report.avg}" / ${report.avgCm} cm`,
     `Min: ${report.min}" | Max: ${report.max}"`,
     '',
@@ -90,7 +115,7 @@ export function formatReportText(report) {
     `Approaching: ${report.approaching}`,
     `Below threshold: ${report.belowThreshold}`,
     '',
-    `${EMOJI.warning} Abnormal Readings: ${report.abnormalCount}`,
+    `${EMOJI.warning} Abnormal / Runt Trees: ${report.abnormalCount}`,
     '',
     `${EMOJI.cloud} Sync Status`,
     `Pending: ${report.pendingSync} | Synced: ${report.synced}`,

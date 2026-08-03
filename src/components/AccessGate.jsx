@@ -15,7 +15,7 @@ import { db } from '../db';
 const REQUIRE_GPS = String(import.meta.env.VITE_REQUIRE_GPS_FOR_APPROVAL).trim().toLowerCase() === 'true';
 
 /**
- * AccessGate component — shown before the normal app when access approval is required.
+ * AccessGate component - shown before the normal app when access approval is required.
  * States: loading, not_requested, requesting, pending, approved, denied, error, offline_blocked
  */
 export default function AccessGate({ onApproved }) {
@@ -83,7 +83,25 @@ export default function AccessGate({ onApproved }) {
       const local = await getLocalAccessStatus();
 
       if (local.accessStatus === 'approved' && local.deviceToken) {
-        if (!isTokenExpired(local.expiresAt)) {
+        if (isTokenExpired(local.expiresAt)) {
+          await saveAccessStatus({ accessStatus: null, deviceToken: null, requestId: null });
+        } else {
+          // If online and requestId is present, do a background re-validation check
+          if (navigator.onLine && local.requestId) {
+            try {
+              const res = await checkAccessStatus(local.requestId, id);
+              if (res && res.success === false && (res.errorType === 'request_not_found' || res.errorType === 'device_not_found' || res.errorType === 'device_revoked')) {
+                await saveAccessStatus({ accessStatus: null, deviceToken: null, requestId: null, approvedAt: null, expiresAt: null });
+                setState('not_requested');
+                setErrorMessage('Device access was revoked or deleted. Please request access again.');
+                captureLocation();
+                return;
+              }
+            } catch {
+              // Network error during re-validation - keep approved state offline (Offline Safety Rule)
+            }
+          }
+
           onApproved({
             estate: local.estate,
             operatorName: local.operatorName,
@@ -92,7 +110,6 @@ export default function AccessGate({ onApproved }) {
           });
           return;
         }
-        await saveAccessStatus({ accessStatus: null, deviceToken: null });
       }
 
       if (local.accessStatus === 'pending' && local.requestId) {
@@ -204,13 +221,24 @@ export default function AccessGate({ onApproved }) {
           return;
         }
         if (result.status === 'denied') {
-          await saveAccessStatus({ accessStatus: 'denied' });
+          await saveAccessStatus({ accessStatus: 'denied', requestId: null });
           setState('denied');
           return;
         }
         // still pending
       } else {
-        setErrorMessage(result.error || 'Failed to check status.');
+        if (result.isNetworkError) {
+          // Network error or timeout - DO NOT clear stored approval (Offline Safety Rule)
+          setErrorMessage('Network error checking status. Retrying when connection improves.');
+        } else if (result.errorType === 'request_not_found' || result.errorType === 'device_not_found' || result.errorType === 'device_revoked' || result.error === 'Request not found.') {
+          // Authoritative server response: record deleted or revoked -> clear local state
+          await saveAccessStatus({ accessStatus: null, requestId: null, deviceToken: null, approvedAt: null, expiresAt: null });
+          setRequestId(null);
+          setState('not_requested');
+          setErrorMessage('Previous access request or device approval was deleted/revoked. You may submit a new request.');
+        } else {
+          setErrorMessage(result.error || 'Failed to check status.');
+        }
       }
     } catch (err) {
       setErrorMessage(err.message || 'Network error.');
@@ -219,6 +247,7 @@ export default function AccessGate({ onApproved }) {
       setChecking(false);
     }
   }, [requestId, deviceId, isOnline, estate, operatorName, onApproved]);
+
 
   useEffect(() => {
     if (state !== 'pending' || !isOnline || !requestId || !deviceId) return;

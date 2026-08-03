@@ -69,7 +69,7 @@ GirthTracker replaces the **entire traditional census workflow** with a single, 
 | 🔢 **Auto Calculations** | Automatically computes `Girth = Caliper Reading × π` and increments the tree number. |
 | ☁️ **Background Sync** | Auto-detects connectivity and syncs pending records to Google Sheets. Periodic retry every 30 seconds. |
 | 🛡️ **Shared-Secret Auth** | Secures the Google Apps Script endpoint with a configurable shared secret. |
-| ⚠️ **Range Validation** | Rejects caliper readings outside the configurable 0.5–30 inch valid range. |
+| ⚠️ **Range Validation** | Rejects caliper readings outside the configurable 0.5-30 inch valid range. |
 | ↩️ **Undo with Confirmation** | Two-tap undo to prevent accidental deletions. Restores the tree number. |
 | ✏️ **Manual Entry Fallback** | In case Bluetooth fails, manually type a caliper reading. |
 | 📊 **CSV Export** | Export all local measurement data as a `.csv` file for offline analysis. |
@@ -99,8 +99,8 @@ GirthTracker replaces the **entire traditional census workflow** with a single, 
 **v1.3.1 - PWA Install Compatibility Fix**
 - **Fixed**: Install button not appearing on Vivo default browser and other browsers that don't fire `beforeinstallprompt`
 - **Added**: Fallback install banner with platform-specific guidance (iOS Safari, Android non-Chrome, desktop)
-- **Added**: `appinstalled` event tracking — hides install UI after app is installed
-- **Added**: Standalone mode detection — hides install UI when app is already running as installed PWA
+- **Added**: `appinstalled` event tracking - hides install UI after app is installed
+- **Added**: Standalone mode detection - hides install UI when app is already running as installed PWA
 - **Added**: Dismissible banner that persists to `localStorage` (won't reappear after dismissed)
 - **Fixed**: PWA manifest icon `purpose: "any maskable"` split into separate `any` and `maskable` entries (avoids Lighthouse warnings and rendering issues)
 - **Added**: `id` field to PWA manifest for stable identity across updates

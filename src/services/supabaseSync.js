@@ -135,16 +135,31 @@ export async function requestAccessViaSupabase(payload) {
 }
 
 export async function checkAccessViaSupabase(requestId, deviceId) {
-  const url = `${SUPABASE_FUNCTIONS_URL}/check-access`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId, deviceId })
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || 'Failed to check access status');
-  return result;
+  const url = `${SUPABASE_FUNCTIONS_URL}/check-access?t=${Date.now()}`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
+      body: JSON.stringify({ requestId, deviceId, cacheBust: Date.now() })
+    });
+    const result = await response.json();
+    if (!response.ok && !result.errorType) {
+      const err = new Error(result.error || 'Failed to check access status');
+      err.isNetworkError = false;
+      throw err;
+    }
+    return result;
+  } catch (err) {
+    if (!err.errorType && (err.name === 'TypeError' || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError') || err.message?.includes('network'))) {
+      return { success: false, isNetworkError: true, error: err.message };
+    }
+    throw err;
+  }
 }
+
 
 export async function fetchFieldConfig(currentVersion = 0) {
   const url = `${SUPABASE_FUNCTIONS_URL}/fetch-config`;

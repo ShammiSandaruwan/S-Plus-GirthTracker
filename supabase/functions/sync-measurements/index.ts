@@ -200,6 +200,49 @@ serve(async (req) => {
         const resolvedFieldNo = fieldRow.field_code;
         const resolvedExtent = fieldRow.extent_ha;
 
+        const treeCondition = m.treeCondition || 'healthy';
+        const conditionNote = m.conditionNote ? String(m.conditionNote).trim() : null;
+
+        if (treeCondition === 'healthy' || treeCondition === 'runt') {
+          if (m.girth == null || Number(m.girth) <= 0 || isNaN(Number(m.girth))) {
+            console.warn(`[SYNC-DEBUG] [Req:${requestId}] REJECTED: Healthy/runt tree missing positive girth | localId:${localId} | girth:${m.girth}`);
+            errors.push({
+              localId,
+              errorCode: 'VALIDATION_ERROR',
+              error: 'Positive girth measurement is required for healthy and runt trees.'
+            });
+            continue;
+          }
+        } else if (treeCondition === 'dead' || treeCondition === 'damaged') {
+          if (m.girth != null) {
+            console.warn(`[SYNC-DEBUG] [Req:${requestId}] REJECTED: Dead/damaged tree has non-null girth | localId:${localId} | girth:${m.girth}`);
+            errors.push({
+              localId,
+              errorCode: 'VALIDATION_ERROR',
+              error: 'Dead or damaged trees must not have a girth value recorded.'
+            });
+            continue;
+          }
+          if (!conditionNote) {
+            console.warn(`[SYNC-DEBUG] [Req:${requestId}] REJECTED: Dead/damaged tree missing condition note | localId:${localId}`);
+            errors.push({
+              localId,
+              errorCode: 'VALIDATION_ERROR',
+              error: 'A condition note is required for dead or damaged trees.'
+            });
+            continue;
+          }
+        } else {
+          errors.push({
+            localId,
+            errorCode: 'VALIDATION_ERROR',
+            error: 'Invalid tree condition specified.'
+          });
+          continue;
+        }
+
+        const isMeasurable = (treeCondition === 'healthy' || treeCondition === 'runt');
+
         const row = {
           estate: resolvedEstate,
           division: resolvedDivision,
@@ -208,13 +251,15 @@ serve(async (req) => {
           tree_no: m.treeNo,
           field_id: fieldRow.id,
           extent_at_measurement: resolvedExtent,
-          caliper_reading: m.caliperReading,
-          girth: m.girth,
-          girth_cm: m.girthCm || null,
-          recommendation_status: m.recommendationStatus || null,
-          recommendation_text: m.recommendationText || null,
-          abnormal_flag: m.abnormalFlag || false,
-          abnormal_reason: m.abnormalReason || null,
+          caliper_reading: isMeasurable ? m.caliperReading : null,
+          girth: isMeasurable ? m.girth : null,
+          girth_cm: isMeasurable ? (m.girthCm || null) : null,
+          tree_condition: treeCondition,
+          condition_note: conditionNote,
+          recommendation_status: isMeasurable ? (m.recommendationStatus || null) : treeCondition,
+          recommendation_text: isMeasurable ? (m.recommendationText || null) : (treeCondition === 'dead' ? 'Dead Tree' : 'Damaged Tree'),
+          abnormal_flag: treeCondition === 'runt' ? true : (m.abnormalFlag || false),
+          abnormal_reason: treeCondition === 'runt' ? 'Runt Tree' : (m.abnormalReason || null),
           latitude: m.latitude || null,
           longitude: m.longitude || null,
           gps_accuracy: m.gpsAccuracy || null,

@@ -70,12 +70,19 @@ export default function FieldInsightsModal({ settings, isOpen, onClose }) {
               </div>
             </div>
 
-            <div className="insights-status-row" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+            <div className="insights-status-row" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <span className="insights-chip healthy" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '12px', background: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', border: '1px solid rgba(76, 175, 80, 0.2)' }}>🌿 {insights.healthyCount || 0} Healthy</span>
+              {insights.runtCount > 0 && (
+                <span className="insights-chip runt" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '12px', background: 'rgba(255, 193, 7, 0.15)', color: '#ffc107', border: '1px solid rgba(255, 193, 7, 0.3)' }}>📉 {insights.runtCount} Runt</span>
+              )}
+              {insights.deadCount > 0 && (
+                <span className="insights-chip dead" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}>☠️ {insights.deadCount} Dead</span>
+              )}
+              {insights.damagedCount > 0 && (
+                <span className="insights-chip damaged" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '12px', background: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', border: '1px solid rgba(236, 72, 153, 0.3)' }}>🩹 {insights.damagedCount} Damaged</span>
+              )}
               <span className="insights-chip tappable" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '12px', background: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', border: '1px solid rgba(76, 175, 80, 0.2)' }}>🌴 {insights.tappableCount} Tappable</span>
               <span className="insights-chip approaching" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '12px', background: 'rgba(255, 152, 0, 0.1)', color: '#ff9800', border: '1px solid rgba(255, 152, 0, 0.2)' }}>🔶 {insights.approachingCount} Approaching</span>
-              {insights.abnormalCount > 0 && (
-                <span className="insights-chip abnormal" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '12px', background: 'rgba(156, 39, 176, 0.1)', color: '#9c27b0', border: '1px solid rgba(156, 39, 176, 0.2)' }}>⚠️ {insights.abnormalCount} Abnormal</span>
-              )}
             </div>
 
             {insights.distribution && insights.distribution.length > 0 && (

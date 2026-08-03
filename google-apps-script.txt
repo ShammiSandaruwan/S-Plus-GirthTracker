@@ -41,7 +41,9 @@ const MEASUREMENT_HEADERS = [
   "Longitude",
   "GPS Accuracy",
   "Google Map Link",
-  "Measurement ID"
+  "Measurement ID",
+  "Tree Condition",
+  "Condition Note"
 ];
 
 function doPost(e) {
@@ -334,7 +336,7 @@ function handleSyncMeasurements(parsed) {
       skippedIds.push(m.id);
       return;
     }
-    // Also check legacy key — covers migration edge case where the same measurement
+    // Also check legacy key - covers migration edge case where the same measurement
     // was synced before Measurement ID existed (row has matching treeNo|timestamp but no mid)
     if (existingLegacyKeys.has(legacyKey)) {
       skippedIds.push(m.id);
@@ -422,7 +424,7 @@ function handleDeleteMeasurement(parsed) {
       }
     }
 
-    // Fallback: legacy rows without Measurement ID — match by treeNo + timestamp
+    // Fallback: legacy rows without Measurement ID - match by treeNo + timestamp
     if (treeNo != null && timestamp) {
       const formattedDate = formatSriLankaDateTime_(timestamp);
       for (let i = data.length - 1; i >= 1; i--) {
@@ -605,6 +607,9 @@ function computeHash(input) {
 }
 
 function respondJson(obj) {
+  if (obj && typeof obj === 'object') {
+    obj.fetched_at = new Date().toISOString();
+  }
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -629,12 +634,12 @@ function getOrCreateSheet(sheetName, headers = []) {
  *   as column 16 without disturbing existing data rows (they get blank in col 16).
  * - If "Measurement ID" already exists, does nothing.
  * - Validates that known required headers are present; logs a warning if not.
- * - Running repeatedly is safe — no duplicate columns, no data corruption.
+ * - Running repeatedly is safe - no duplicate columns, no data corruption.
  */
 function ensureMeasurementSheetSchema_(sheet) {
   const lastCol = sheet.getLastColumn();
 
-  // Empty sheet — write full header row
+  // Empty sheet - write full header row
   if (lastCol === 0) {
     sheet.getRange(1, 1, 1, MEASUREMENT_HEADERS.length).setValues([MEASUREMENT_HEADERS]);
     sheet.getRange(1, 1, 1, MEASUREMENT_HEADERS.length).setFontWeight("bold");
@@ -651,15 +656,16 @@ function ensureMeasurementSheetSchema_(sheet) {
     }
   }
 
-  // Check if "Measurement ID" column already exists
-  if (currentHeaders.indexOf("Measurement ID") !== -1) {
-    return; // Already migrated, nothing to do
+  // Ensure missing optional columns ("Measurement ID", "Tree Condition", "Condition Note") exist
+  const newCols = ["Measurement ID", "Tree Condition", "Condition Note"];
+  let nextCol = sheet.getLastColumn() + 1;
+  for (let i = 0; i < newCols.length; i++) {
+    if (currentHeaders.indexOf(newCols[i]) === -1) {
+      sheet.getRange(1, nextCol).setValue(newCols[i]);
+      sheet.getRange(1, nextCol).setFontWeight("bold");
+      nextCol++;
+    }
   }
-
-  // Append the new header in the next available column (preserves existing alignment)
-  const newColIndex = lastCol + 1;
-  sheet.getRange(1, newColIndex).setValue("Measurement ID");
-  sheet.getRange(1, newColIndex).setFontWeight("bold");
   // Existing data rows naturally have blank cells in this new column
 }
 
@@ -766,82 +772,108 @@ function handleExportToSheet(parsed) {
     return respondJson({ success: false, error: "Invalid or expired admin session." });
   }
 
-  const { estate, division, fieldNo, rows, spreadsheetId, tabName } = parsed;
-  if (!estate || !fieldNo) {
-    return respondJson({ success: false, error: "Estate and Field No are required for export." });
-  }
-
-  const sheetId = spreadsheetId || ESTATE_SHEET_MAP[estate];
-  if (!sheetId) return respondJson({ success: false, error: "Unknown estate and no spreadsheetId provided." });
-
-  let sheet;
+  const lock = LockService.getScriptLock();
   try {
-    const ss = SpreadsheetApp.openById(sheetId);
-    if (tabName) {
-      sheet = ss.getSheetByName(tabName);
+    const hasLock = lock.tryLock(30000);
+    if (!hasLock) {
+      return respondJson({ success: false, error: "Could not acquire script lock for export. Please try again." });
     }
+
+    const { estate, division, fieldNo, rows, spreadsheetId, tabName, export_request_id } = parsed;
+    if (!estate || !fieldNo) {
+      return respondJson({ success: false, error: "Estate and Field No are required for export." });
+    }
+
+    // 1. Check durable idempotency store (ExportLog sheet)
+    const exportRequestId = export_request_id || "";
+    const logSheet = getOrCreateSheet("ExportLog", ["export_request_id", "completed_at", "estate", "division", "field_no", "spreadsheet_id", "tab_name", "row_count"]);
+    if (exportRequestId) {
+      const logData = logSheet.getDataRange().getValues();
+      for (let i = 1; i < logData.length; i++) {
+        if (logData[i][0] === exportRequestId) {
+          return respondJson({
+            success: true,
+            message: "Export request was already processed.",
+            rowCount: Number(logData[i][7] || 0),
+            destinationTab: String(logData[i][6] || ""),
+            exportRequestId: exportRequestId,
+            isDuplicate: true
+          });
+        }
+      }
+    }
+
+    const sheetId = spreadsheetId || ESTATE_SHEET_MAP[estate];
+    if (!sheetId) return respondJson({ success: false, error: "Unknown estate and no spreadsheetId provided." });
+
+    const ss = SpreadsheetApp.openById(sheetId);
+    let sheet = tabName ? ss.getSheetByName(tabName) : null;
     if (!sheet) {
       sheet = ss.getSheets()[0];
     }
     ensureMeasurementSheetSchema_(sheet);
-  } catch (e) {
-    return respondJson({ success: false, error: "Sheet error: " + e.message });
-  }
 
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  
-  let colMap;
-  try {
-    colMap = getRequiredMeasurementColumnMap_(headers);
-  } catch (e) {
-    return respondJson({ success: false, error: e.message });
-  }
+    // 2. Append all rows in a single batch operation without deleting existing data
+    const exportRows = rows || [];
+    if (exportRows.length > 0) {
+      const rowData = exportRows.map(r => {
+        const cond = r.tree_condition || r.treeCondition || "healthy";
+        const note = r.condition_note || r.conditionNote || "";
+        const isMeasurable = (cond === "healthy" || cond === "runt");
+        const caliperVal = isMeasurable ? valueOrBlank_(r.caliper_reading || r.caliperReading) : "";
+        const girthVal = isMeasurable ? valueOrBlank_(r.girth) : "";
 
-  const divCol = colMap["Division"];
-  const fieldCol = colMap["Field No"];
+        return [
+          r.estate || estate,
+          r.division || division || "",
+          r.field_no || fieldNo || "",
+          valueOrBlank_(r.extent),
+          valueOrBlank_(r.tree_no),
+          caliperVal,
+          girthVal,
+          formatSriLankaDateTime_(r.measured_at || r.timestamp),
+          r.recommendation_text || r.recommendationText || (isMeasurable ? "" : (cond === "dead" ? "Dead Tree" : "Damaged Tree")),
+          r.abnormal_flag || r.abnormalFlag ? "Yes" : "No",
+          r.abnormal_reason || r.abnormalReason || "",
+          valueOrBlank_(r.latitude),
+          valueOrBlank_(r.longitude),
+          valueOrBlank_(r.gps_accuracy || r.gpsAccuracy),
+          r.google_map_link || r.googleMapLink || createGoogleMapLink_(r.latitude, r.longitude),
+          r.id || "",
+          cond,
+          note
+        ];
+      });
 
-  // 1. Delete existing rows for this exact field
-  // Iterate backwards to safely delete rows without messing up indices
-  for (let i = data.length - 1; i >= 1; i--) {
-    const rowDiv = String(data[i][divCol] || "").trim();
-    const rowField = String(data[i][fieldCol] || "").trim();
-    
-    // If division is provided in the filter, it must match. Otherwise, just match fieldNo.
-    const divMatches = !division || rowDiv.toLowerCase() === division.toLowerCase();
-    const fieldMatches = rowField.toLowerCase() === fieldNo.toLowerCase();
-
-    if (divMatches && fieldMatches) {
-      sheet.deleteRow(i + 1);
+      const startRow = Math.max(1, sheet.getLastRow()) + 1;
+      sheet.getRange(startRow, 1, rowData.length, rowData[0].length).setValues(rowData);
     }
-  }
 
-  // 2. Write all exported rows
-  if (rows && rows.length > 0) {
-    const rowData = rows.map(r => [
-      r.estate,
-      r.division || "",
-      r.field_no || "",
-      valueOrBlank_(r.extent),
-      valueOrBlank_(r.tree_no),
-      valueOrBlank_(r.caliper_reading),
-      valueOrBlank_(r.girth),
-      formatSriLankaDateTime_(r.measured_at),
-      r.recommendation_text || "",
-      r.abnormal_flag ? "Yes" : "No",
-      r.abnormal_reason || "",
-      valueOrBlank_(r.latitude),
-      valueOrBlank_(r.longitude),
-      valueOrBlank_(r.gps_accuracy),
-      r.google_map_link || createGoogleMapLink_(r.latitude, r.longitude),
-      r.id // measurement_id
-    ]);
-    
-    const startRow = sheet.getLastRow() + 1;
-    sheet.getRange(startRow, 1, rowData.length, rowData[0].length).setValues(rowData);
-  }
+    // 3. Log completed export to durable ExportLog store
+    if (exportRequestId) {
+      logSheet.appendRow([
+        exportRequestId,
+        new Date().toISOString(),
+        estate,
+        division || "",
+        fieldNo,
+        sheetId,
+        sheet.getName(),
+        exportRows.length
+      ]);
+    }
 
-  return respondJson({ success: true, rowCount: rows ? rows.length : 0 });
+    return respondJson({
+      success: true,
+      rowCount: exportRows.length,
+      destinationTab: sheet.getName(),
+      exportRequestId: exportRequestId
+    });
+  } catch (e) {
+    return respondJson({ success: false, error: "Sheet export error: " + e.message });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function updateLastSeen(deviceIdHash) {
@@ -932,7 +964,7 @@ function createGoogleMapLink_(lat, lng) {
 
 function resetMeasurementSheetHeaders() {
   // Runs the safe schema migration on all mapped estate sheets.
-  // Idempotent — safe to run multiple times.
+  // Idempotent - safe to run multiple times.
   for (const estateName in ESTATE_SHEET_MAP) {
     const sheetId = ESTATE_SHEET_MAP[estateName];
     if (sheetId) {
