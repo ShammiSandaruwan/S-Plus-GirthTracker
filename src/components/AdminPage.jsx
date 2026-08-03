@@ -667,16 +667,47 @@ function QRCodesTab({ estates, divisions, fields }) {
 
     if (canvasRef.current) {
       try {
-        await QRCode.toCanvas(canvasRef.current, url, {
+        const tempCanvas = document.createElement('canvas');
+        await QRCode.toCanvas(tempCanvas, url, {
           width: 220,
           margin: 2,
           color: { dark: '#000000', light: '#ffffff' }
         });
-      } catch {
-        // QR generation failed silently
+
+        const ctx = canvasRef.current.getContext('2d');
+        const qrSize = 220;
+        const topTextHeight = 30;
+        const bottomTextHeight = 30;
+
+        canvasRef.current.width = qrSize;
+        canvasRef.current.height = qrSize + topTextHeight + bottomTextHeight;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+
+        ctx.drawImage(tempCanvas, 0, topTextHeight);
+
+        const estate = estates.find(e => e.id === qrEstateId)?.name || '';
+        const division = divisions.find(d => d.id === qrDivisionId)?.name || '';
+        const field = fields.find(f => f.id === qrFieldId);
+        const displayName = field ? field.field_code : '';
+        const extent = qrExtent || 'N/A';
+
+        const topText = division ? `${estate} - ${division}` : estate;
+        const bottomText = `${displayName} - ${extent}`;
+
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        ctx.fillText(topText, qrSize / 2, topTextHeight / 2);
+        ctx.fillText(bottomText, qrSize / 2, qrSize + topTextHeight + (bottomTextHeight / 2));
+      } catch (err) {
+        console.error(err);
       }
     }
-  }, [qrEstateId, qrDivisionId, qrFieldId, qrExtent, qrStartTree]);
+  }, [qrEstateId, qrDivisionId, qrFieldId, qrExtent, qrStartTree, estates, divisions, fields]);
 
   useEffect(() => {
     const run = async () => {
