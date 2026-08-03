@@ -18,9 +18,10 @@ serve(async (req) => {
       throw new Error('Supabase environment variables missing');
     }
 
-    const adminToken = req.headers.get('x-admin-token');
+    const authHeader = req.headers.get('Authorization');
+    const adminToken = authHeader ? authHeader.replace('Bearer ', '') : null;
     if (!adminToken) {
-      return new Response(JSON.stringify({ error: 'Missing admin token' }), {
+      return new Response(JSON.stringify({ error: 'Missing authorization token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -28,22 +29,27 @@ serve(async (req) => {
 
     const { estate, division, fieldNo, estate_id, division_id, field_id, dateFrom, dateTo, status } = await req.json();
 
-    // 1. Validate admin token using admin-auth Edge Function
-    const authUrl = `${supabaseUrl}/functions/v1/admin-auth`;
-    const validateResponse = await fetch(authUrl, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${adminToken}`
-      },
-      body: JSON.stringify({ action: 'validate_session' })
-    });
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    const validateResult = await validateResponse.json();
-    if (!validateResult.valid) {
-      return new Response(JSON.stringify({ error: validateResult.error || 'Invalid or expired admin session' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // 1. Validate JWT via Supabase Auth
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(adminToken);
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 2. Check if user is in admin_users allowlist
+    const { data: adminUser, error: adminError } = await supabaseAdmin
+      .from('admin_users')
+      .select('id')
+      .eq('auth_uid', user.id)
+      .eq('active', true)
+      .single();
+
+    if (adminError || !adminUser) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 

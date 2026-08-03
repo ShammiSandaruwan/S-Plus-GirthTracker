@@ -12,10 +12,11 @@ serve(async (req) => {
   }
 
   try {
-    const adminToken = req.headers.get('x-admin-token');
+    const authHeader = req.headers.get('Authorization');
+    const adminToken = authHeader ? authHeader.replace('Bearer ', '') : null;
     if (!adminToken) {
-      return new Response(JSON.stringify({ error: 'Missing admin token' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      return new Response(JSON.stringify({ error: 'Missing authorization token' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -43,29 +44,30 @@ serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-    
-    // 1. Validate admin session via admin-auth Edge Function
-    if (supabaseUrl) {
-      const valRes = await fetch(`${supabaseUrl}/functions/v1/admin-auth`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${adminToken}`
-        },
-        body: JSON.stringify({ action: 'validate_session' }),
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    // 1. Validate JWT via Supabase Auth
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(adminToken);
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
-      const valResult = await valRes.json();
-      if (!valResult.valid) {
-        return new Response(JSON.stringify({ error: valResult.error || 'Invalid or expired admin session' }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
     }
 
-    const supabaseAdmin = createClient(
-      supabaseUrl,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    );
+    // 2. Check if user is in admin_users allowlist
+    const { data: adminUser, error: adminError } = await supabaseAdmin
+      .from('admin_users')
+      .select('id')
+      .eq('auth_uid', user.id)
+      .eq('active', true)
+      .single();
+
+    if (adminError || !adminUser) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
     // 2. Resolve canonical estate, division, and field identifiers
     let estateId = inputEstateId || null;
