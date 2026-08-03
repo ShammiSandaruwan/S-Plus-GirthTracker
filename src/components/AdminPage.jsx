@@ -865,8 +865,8 @@ export default function AdminPage() {
           setError('Failed to load full configuration. Session may have expired.');
           await supabase.auth.signOut();
         }
-      } catch {
-        setError('Failed to fetch config.');
+      } catch (err) {
+        setError(`Failed to fetch config: ${err.message}`);
       }
     };
 

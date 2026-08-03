@@ -47,7 +47,11 @@ serve(async (req) => {
       .single();
 
     if (adminError || !adminUser) {
-      return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), {
+      return new Response(JSON.stringify({ 
+        error: 'Unauthorized: User is not an active admin',
+        details: adminError || 'User not found in admin_users table',
+        uid: user.id
+      }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
