@@ -184,7 +184,12 @@ export async function adminCRUD(adminToken, action, payload = {}) {
     body: JSON.stringify({ action, ...payload })
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || result.message || `Admin CRUD failed for action: ${action}`);
+  if (!response.ok) {
+    let errMsg = result.error || result.message || `Admin CRUD failed for action: ${action}`;
+    if (result.details) errMsg += ` | Details: ${JSON.stringify(result.details)}`;
+    if (result.uid) errMsg += ` | UID: ${result.uid}`;
+    throw new Error(errMsg);
+  }
   return result;
 }
 
