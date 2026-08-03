@@ -82,36 +82,52 @@ export function checkAbnormal(girthInches, sessionGirths) {
 export function calculateFieldInsights(measurements) {
   if (!measurements || measurements.length === 0) return null;
 
+  const healthyCount = measurements.filter(m => (m.treeCondition || 'healthy') === 'healthy').length;
+  const runtCount = measurements.filter(m => m.treeCondition === 'runt').length;
+  const deadCount = measurements.filter(m => m.treeCondition === 'dead').length;
+  const damagedCount = measurements.filter(m => m.treeCondition === 'damaged' || m.treeCondition === 'animal_attack').length;
+
   const validGirths = measurements
-    .map(m => parseFloat(m.girth))
-    .filter(g => !isNaN(g) && g > 0);
+    .filter(m => {
+      const cond = m.treeCondition || 'healthy';
+      return (cond === 'healthy' || cond === 'runt') && m.girth != null && !isNaN(parseFloat(m.girth)) && parseFloat(m.girth) > 0;
+    })
+    .map(m => parseFloat(m.girth));
 
   const validGirthsCm = measurements
-    .map(m => parseFloat(m.girthCm))
-    .filter(g => !isNaN(g) && g > 0);
+    .filter(m => {
+      const cond = m.treeCondition || 'healthy';
+      return (cond === 'healthy' || cond === 'runt') && m.girthCm != null && !isNaN(parseFloat(m.girthCm)) && parseFloat(m.girthCm) > 0;
+    })
+    .map(m => parseFloat(m.girthCm));
 
-  if (validGirths.length === 0) return null;
+  const totalObserved = measurements.length;
+  const totalMeasurable = validGirths.length;
 
-  const total = validGirths.length;
   const sum = validGirths.reduce((s, v) => s + v, 0);
-  const avg = parseFloat((sum / total).toFixed(2));
-  const min = parseFloat(Math.min(...validGirths).toFixed(2));
-  const max = parseFloat(Math.max(...validGirths).toFixed(2));
+  const avg = totalMeasurable > 0 ? parseFloat((sum / totalMeasurable).toFixed(2)) : 0;
+  const min = totalMeasurable > 0 ? parseFloat(Math.min(...validGirths).toFixed(2)) : 0;
+  const max = totalMeasurable > 0 ? parseFloat(Math.max(...validGirths).toFixed(2)) : 0;
 
   const tappableCount = measurements.filter(m => m.recommendationStatus === 'tappable').length;
   const approachingCount = measurements.filter(m => m.recommendationStatus === 'approaching').length;
   const notReadyCount = measurements.filter(m => m.recommendationStatus === 'not_ready').length;
-  const abnormalCount = measurements.filter(m => m.abnormalFlag).length;
+  const abnormalCount = measurements.filter(m => m.abnormalFlag || m.treeCondition === 'runt').length;
   const pendingSync = measurements.filter(m => m.syncStatus === 'pending').length;
   const syncedSync = measurements.filter(m => m.syncStatus === 'synced').length;
 
   const distribution = buildDistribution(validGirthsCm.length > 0 ? validGirthsCm : validGirths);
 
   return {
-    total,
+    total: totalObserved,
+    totalMeasurable,
     avg,
     min,
     max,
+    healthyCount,
+    runtCount,
+    deadCount,
+    damagedCount,
     tappableCount,
     approachingCount,
     notReadyCount,
@@ -151,8 +167,9 @@ function buildDistribution(values) {
   const maxCount = Math.max(...buckets.map(b => b.count));
 
   return buckets.map(b => ({
-    label: `${b.min.toFixed(0)}–${b.max.toFixed(0)}`,
+    label: `${b.min.toFixed(0)}-${b.max.toFixed(0)}`,
     count: b.count,
     pct: maxCount > 0 ? Math.round((b.count / maxCount) * 100) : 0,
   }));
 }
+

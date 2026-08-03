@@ -343,7 +343,7 @@ export default function AdminConfigTab({ token }) {
                   {fields.map(f => (
                     <tr key={f.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '0.4rem' }}>{f.field_code}</td>
-                      <td style={{ padding: '0.4rem' }}>{f.display_name || '—'}</td>
+                      <td style={{ padding: '0.4rem' }}>{f.display_name || '-'}</td>
                       <td style={{ padding: '0.4rem' }}>{f.extent_ha}</td>
                       <td style={{ padding: '0.4rem' }}>{f.active ? 'Active' : 'Inactive'}</td>
                       <td style={{ padding: '0.4rem' }}>
@@ -394,7 +394,7 @@ export default function AdminConfigTab({ token }) {
                       <tr key={m.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                         <td style={{ padding: '0.3rem' }}>{m.estates?.name || m.estate_id}</td>
                         <td style={{ padding: '0.3rem', wordBreak: 'break-all' }}>{m.spreadsheet_id}</td>
-                        <td style={{ padding: '0.3rem' }}>{m.tab_name || '—'}</td>
+                        <td style={{ padding: '0.3rem' }}>{m.tab_name || '-'}</td>
                       </tr>
                     ))}
                   </tbody>

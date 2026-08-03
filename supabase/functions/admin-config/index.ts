@@ -145,7 +145,7 @@ async function updateEstate(db: any, body: any) {
   const { id, ...updates } = body;
   if (!id) return respond({ error: 'id required' }, 400);
 
-  // Prevent deletion — use active flag
+  // Prevent deletion - use active flag
   delete updates.action;
   const { data, error } = await db.from('estates').update(updates).eq('id', id).select().single();
   if (error) throw error;
@@ -414,7 +414,7 @@ async function migrateDevices(db: any, body: any) {
         if (isIdentical) {
           report.skipped++;
         } else {
-          // CONFLICT — do NOT overwrite
+          // CONFLICT - do NOT overwrite
           const diffs: any[] = [];
           if (existing.token_hash !== src.tokenHash) diffs.push({ field: 'token_hash', source: '[redacted]', existing: '[redacted]' });
           if (existing.estate_code !== src.estate) diffs.push({ field: 'estate_code', source: src.estate, existing: existing.estate_code });

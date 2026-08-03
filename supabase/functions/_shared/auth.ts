@@ -30,7 +30,7 @@ export async function verifyGasHmac(
     return { valid: false, error: 'Request timestamp outside allowed window' };
   }
 
-  // 2. Persistent nonce check — atomic insert
+  // 2. Persistent nonce check - atomic insert
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
   const { error: nonceError } = await supabaseAdmin
     .from('request_nonces')
@@ -39,7 +39,7 @@ export async function verifyGasHmac(
   if (nonceError) {
     // Unique constraint violation = replay
     if (nonceError.code === '23505') {
-      return { valid: false, error: 'Duplicate nonce — replay rejected' };
+      return { valid: false, error: 'Duplicate nonce - replay rejected' };
     }
     return { valid: false, error: `Nonce check failed: ${nonceError.message}` };
   }

@@ -5,7 +5,7 @@ import { db } from '../db';
 import { generateSessionReport, formatReportText, shareViaWhatsApp } from '../services/reports';
 
 /**
- * SessionReport component — generates and shares field session reports.
+ * SessionReport component - generates and shares field session reports.
  */
 export default function SessionReport({ settings, onClose }) {
   const [report, setReport] = useState(null);

@@ -1,5 +1,5 @@
 -- ============================================================
--- GirthTracker Supabase Schema — Phase 1.5
+-- GirthTracker Supabase Schema - Phase 1.5
 -- Branch: feat/canonical-sync-supabase
 -- All tables additive. No destructive changes to existing data.
 -- ============================================================
@@ -275,7 +275,7 @@ CREATE TRIGGER set_updated_at_estate_sheet_exports BEFORE UPDATE ON estate_sheet
 CREATE TABLE census_measurements (
   id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
 
-  -- Uniqueness composite key (legacy — kept until field_id backfill)
+  -- Uniqueness composite key (legacy - kept until field_id backfill)
   estate          TEXT NOT NULL,
   division        TEXT NOT NULL,
   field_no        TEXT NOT NULL,
@@ -286,10 +286,12 @@ CREATE TABLE census_measurements (
   field_id        UUID REFERENCES fields(id),
   extent_at_measurement NUMERIC(8,2),
 
-  -- Measurement data
-  caliper_reading NUMERIC(8,4) NOT NULL,
-  girth           NUMERIC(8,2) NOT NULL,
+  -- Measurement & condition data
+  caliper_reading NUMERIC(8,4),
+  girth           NUMERIC(8,2),
   girth_cm        NUMERIC(8,2),
+  tree_condition  TEXT NOT NULL DEFAULT 'healthy',
+  condition_note  TEXT,
 
   -- Recommendation & analysis
   recommendation_status TEXT,

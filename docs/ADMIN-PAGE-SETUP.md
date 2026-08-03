@@ -35,4 +35,4 @@ The admin page is intentionally hidden from the normal application UI. You must 
 
 ## 5. Security Warning
 
-The hidden route `/mod` provides no security by itself—it is simply a convenient, unlinked path. The actual security relies entirely on the TOTP backend verification. Without the 6-digit code from Google Authenticator, no access or data is granted. Keep your `ADMIN_TOTP_SECRET` secure and **never** commit it to version control or add it to frontend environment variables.
+The hidden route `/mod` provides no security by itself - it is simply a convenient, unlinked path. The actual security relies entirely on the TOTP backend verification. Without the 6-digit code from Google Authenticator, no access or data is granted. Keep your `ADMIN_TOTP_SECRET` secure and **never** commit it to version control or add it to frontend environment variables.

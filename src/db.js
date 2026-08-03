@@ -34,3 +34,10 @@ db.version(6).stores({
   fieldConfig: 'id'
 });
 
+db.version(7).stores({
+  measurements: '++id, syncStatus, [estate+fieldNo], sessionId, timestamp, abnormalFlag, recommendationStatus, treeCondition, [estate+division+fieldNo+extent+treeNo], [fieldId+treeNo]',
+  settings: 'id, estate, deviceId, accessStatus',
+  fieldConfig: 'id'
+});
+
+
