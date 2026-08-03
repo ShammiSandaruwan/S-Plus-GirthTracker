@@ -784,24 +784,7 @@ function handleExportToSheet(parsed) {
       return respondJson({ success: false, error: "Estate and Field No are required for export." });
     }
 
-    // 1. Check durable idempotency store (ExportLog sheet)
     const exportRequestId = export_request_id || "";
-    const logSheet = getOrCreateSheet("ExportLog", ["export_request_id", "completed_at", "estate", "division", "field_no", "spreadsheet_id", "tab_name", "row_count"]);
-    if (exportRequestId) {
-      const logData = logSheet.getDataRange().getValues();
-      for (let i = 1; i < logData.length; i++) {
-        if (logData[i][0] === exportRequestId) {
-          return respondJson({
-            success: true,
-            message: "Export request was already processed.",
-            rowCount: Number(logData[i][7] || 0),
-            destinationTab: String(logData[i][6] || ""),
-            exportRequestId: exportRequestId,
-            isDuplicate: true
-          });
-        }
-      }
-    }
 
     const sheetId = spreadsheetId || ESTATE_SHEET_MAP[estate];
     if (!sheetId) return respondJson({ success: false, error: "Unknown estate and no spreadsheetId provided." });
@@ -847,20 +830,6 @@ function handleExportToSheet(parsed) {
 
       const startRow = Math.max(1, sheet.getLastRow()) + 1;
       sheet.getRange(startRow, 1, rowData.length, rowData[0].length).setValues(rowData);
-    }
-
-    // 3. Log completed export to durable ExportLog store
-    if (exportRequestId) {
-      logSheet.appendRow([
-        exportRequestId,
-        new Date().toISOString(),
-        estate,
-        division || "",
-        fieldNo,
-        sheetId,
-        sheet.getName(),
-        exportRows.length
-      ]);
     }
 
     return respondJson({

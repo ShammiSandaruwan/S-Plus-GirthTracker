@@ -792,6 +792,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [authInitialized, setAuthInitialized] = useState(false);
 
   const [activeTab, setActiveTab] = useState('overview');
@@ -969,6 +970,7 @@ export default function AdminPage() {
 
     setExporting(true);
     setError('');
+    setSuccessMessage('');
     try {
       const result = await triggerAdminExport(token, {
         estate_id: selectedEstateId,
@@ -983,7 +985,9 @@ export default function AdminPage() {
       });
       
       if (result.success) {
-        alert(result.message || `Export successful! ${result.exportedCount || result.rowCount || 0} records exported to Google Sheets.`);
+        const msg = result.message || `Export successful! ${result.exportedCount || result.rowCount || 0} records exported to Google Sheets.`;
+        setSuccessMessage(msg);
+        alert(msg);
         // Reload to show exportedAt tags
         await loadData();
       }
@@ -1079,6 +1083,15 @@ export default function AdminPage() {
       {error && (
         <div className="warning-banner" style={{ background: 'rgba(244, 67, 54, 0.1)', color: '#f44336', borderColor: '#f44336', marginBottom: '1rem' }}>
           <AlertTriangle size={16} /> {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="warning-banner" style={{ background: 'rgba(76, 175, 80, 0.15)', color: '#2e7d32', borderColor: '#4caf50', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <CheckCircle2 size={16} color="#2e7d32" /> {successMessage}
+          </span>
+          <button onClick={() => setSuccessMessage('')} style={{ background: 'none', border: 'none', color: '#2e7d32', cursor: 'pointer', fontSize: '1rem', fontWeight: 'bold' }}>✕</button>
         </div>
       )}
 

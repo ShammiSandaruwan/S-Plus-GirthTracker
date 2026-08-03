@@ -223,13 +223,19 @@ serve(async (req) => {
     });
 
     // 5. Send payload to Google Apps Script
+    // Ensure estate is set to the name from estates table
+    const formattedRows = measurements.map((m: any) => ({
+      ...m,
+      estate: estateName || estateCode || m.estate
+    }));
+
     const exportPayload = JSON.stringify({
       action: 'export_to_sheet',
       gasSharedSecret,
       estate: estateName || estateCode,
       division: divisionCode || '',
       fieldNo: fieldCode,
-      rows: measurements,
+      rows: formattedRows,
       spreadsheetId,
       tabName,
       export_request_id: exportRequestId,
