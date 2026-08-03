@@ -103,26 +103,33 @@ serve(async (req) => {
       // --- END TELEGRAM WEBHOOK HANDLING ---
 
       // --- 2. ADMIN DASHBOARD API HANDLING ---
-      const adminToken = req.headers.get('x-admin-token');
+      const authHeader = req.headers.get('Authorization');
+      const adminToken = authHeader ? authHeader.replace('Bearer ', '') : null;
       if (!adminToken) {
-        return new Response(JSON.stringify({ error: 'Unauthorized: Missing admin token' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: 'Unauthorized: Missing authorization token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // Validate session via admin-auth
-      const authRes = await fetch(`${supabaseUrl}/functions/v1/admin-auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-        body: JSON.stringify({ action: 'validate_session' })
-      });
-      const authResult = await authRes.json();
-      
-      if (!authResult.valid) {
-        return new Response(JSON.stringify({ error: authResult.error || 'Invalid session' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      // 1. Validate JWT via Supabase Auth
+      const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(adminToken);
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 2. Check if user is in admin_users allowlist
+      const { data: adminUser, error: adminError } = await supabaseAdmin
+        .from('admin_users')
+        .select('id, email')
+        .eq('auth_uid', user.id)
+        .eq('active', true)
+        .single();
+
+      if (adminError || !adminUser) {
+        return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       action = body.action;
       requestId = body.requestId;
-      performedBy = authResult.admin;
+      performedBy = adminUser.email; // Use email as the performer name
     } // End if (isGet)
     
     // Process Dashboard / Web-link Actions (Approve/Deny) using RPC

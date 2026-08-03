@@ -1,16 +1,17 @@
--- ============================================================
--- Fix: Enforce strict uniqueness of tree numbers per field
--- ============================================================
+-- Migration: Create admin_users table for Supabase Auth admin role gating
 
--- Add the unique constraint to census_measurements if not present
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 
-        FROM pg_constraint 
-        WHERE conname = 'uq_field_tree'
-    ) THEN
-        ALTER TABLE public.census_measurements 
-        ADD CONSTRAINT uq_field_tree UNIQUE (field_id, tree_no);
-    END IF;
-END $$;
+CREATE TABLE IF NOT EXISTS admin_users (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  auth_uid   UUID NOT NULL UNIQUE,  -- references auth.users(id)
+  email      TEXT NOT NULL,
+  name       TEXT,
+  active     BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Note: You must insert records into this table mapping to existing Supabase Auth users 
+-- in order for them to have access to the /mod admin dashboard.
+
+-- Example:
+-- INSERT INTO admin_users (auth_uid, email, name) 
+-- VALUES ('<supabase-auth-user-id>', 'admin@example.com', 'Admin User');

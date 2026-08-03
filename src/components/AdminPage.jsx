@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle, Smartphone, QrCode, ShieldOff, Shield, Download } from 'lucide-react';
+import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle, Smartphone, QrCode, ShieldOff, Shield, Download, BarChart3, CheckCircle2, XCircle, Clock, User } from 'lucide-react';
 import QRCode from 'qrcode';
 import 'leaflet/dist/leaflet.css';
 
 import { fetchAdminMeasurements, triggerAdminExport } from '../services/supabaseSync';
-import { SUPABASE_FUNCTIONS_URL } from '../services/supabaseClient';
+import { supabase } from '../services/supabaseClient';
 
 function getStatus(m) {
   return String(m.recommendationText || '').toLowerCase();
@@ -45,6 +45,425 @@ function AdminMap({ measurements, filter, mapRef }) {
           adminMode={true} 
         />
       </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------
+// Summary Tab (Overview)
+// ----------------------------------------------------
+function SummaryTab({ token, onAuthError }) {
+  const [summary, setSummary] = useState(null);
+  const [fieldDetails, setFieldDetails] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [filterEstateId, setFilterEstateId] = useState('');
+  const [filterDivisionId, setFilterDivisionId] = useState('');
+
+  const loadSummary = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { adminCRUD } = await import('../services/supabaseSync');
+      const data = await adminCRUD(token, 'get_summary', {
+        estate_id: filterEstateId || undefined,
+        division_id: filterDivisionId || undefined,
+      });
+      if (data.success) {
+        setSummary(data.summary);
+        setFieldDetails(data.field_details || []);
+      } else {
+        onAuthError(data.error);
+      }
+    } catch (err) {
+      if (err.message && err.message.includes('Invalid or expired')) {
+        onAuthError(err.message);
+      } else {
+        setError('Failed to load summary: ' + err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, onAuthError, filterEstateId, filterDivisionId]);
+
+  useEffect(() => {
+    const run = async () => {
+      await loadSummary();
+    };
+    run();
+  }, [loadSummary]);
+
+  const handleEstateFilter = (val) => {
+    setFilterEstateId(val);
+    setFilterDivisionId('');
+  };
+
+  const formatDate = (val) => {
+    if (!val) return '-';
+    try { return new Date(val).toLocaleDateString(); } catch { return String(val); }
+  };
+
+  const estates = summary?.estates || [];
+  const divisions = (summary?.divisions || []).filter(d => !filterEstateId || d.estate_id === filterEstateId);
+
+  return (
+    <>
+      {error && (
+        <div className="warning-banner" style={{ background: 'rgba(244, 67, 54, 0.1)', color: '#f44336', borderColor: '#f44336', marginBottom: '1rem' }}>
+          <AlertTriangle size={16} /> {error}
+        </div>
+      )}
+
+      {/* Metric Cards */}
+      {loading && !summary ? (
+        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
+          <RefreshCw className="pulse" size={24} />
+          <div className="text-muted" style={{ marginTop: '0.5rem' }}>Loading summary...</div>
+        </div>
+      ) : summary ? (
+        <>
+          <div className="admin-summary-grid">
+            <div className="admin-summary-card">
+              <div className="admin-summary-icon" style={{ background: 'rgba(33, 150, 243, 0.12)' }}><Database size={20} color="#2196f3" /></div>
+              <div className="admin-summary-value">{summary.total_records.toLocaleString()}</div>
+              <div className="admin-summary-label">Total Records</div>
+            </div>
+            <div className="admin-summary-card">
+              <div className="admin-summary-icon" style={{ background: 'rgba(76, 175, 80, 0.12)' }}><CheckCircle2 size={20} color="#4caf50" /></div>
+              <div className="admin-summary-value">{summary.fields_with_records}</div>
+              <div className="admin-summary-label">Fields with Records</div>
+            </div>
+            <div className="admin-summary-card">
+              <div className="admin-summary-icon" style={{ background: 'rgba(255, 152, 0, 0.12)' }}><AlertTriangle size={20} color="#ff9800" /></div>
+              <div className="admin-summary-value">{summary.fields_without_records}</div>
+              <div className="admin-summary-label">Fields without Records</div>
+            </div>
+            <div className="admin-summary-card">
+              <div className="admin-summary-icon" style={{ background: 'rgba(156, 39, 176, 0.12)' }}><BarChart3 size={20} color="#9c27b0" /></div>
+              <div className="admin-summary-value">{summary.total_fields}</div>
+              <div className="admin-summary-label">Total Fields</div>
+            </div>
+          </div>
+
+          {/* Condition Breakdown */}
+          <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
+            <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem' }}>Tree Condition Breakdown</h4>
+            <div className="admin-condition-grid">
+              <div className="admin-condition-chip" style={{ borderLeftColor: '#4caf50' }}>
+                <span className="admin-condition-count">{summary.condition_totals.healthy.toLocaleString()}</span>
+                <span className="admin-condition-name">Healthy</span>
+              </div>
+              <div className="admin-condition-chip" style={{ borderLeftColor: '#ff9800' }}>
+                <span className="admin-condition-count">{summary.condition_totals.runt.toLocaleString()}</span>
+                <span className="admin-condition-name">Runt</span>
+              </div>
+              <div className="admin-condition-chip" style={{ borderLeftColor: '#9e9e9e' }}>
+                <span className="admin-condition-count">{summary.condition_totals.dead.toLocaleString()}</span>
+                <span className="admin-condition-name">Dead</span>
+              </div>
+              <div className="admin-condition-chip" style={{ borderLeftColor: '#f44336' }}>
+                <span className="admin-condition-count">{summary.condition_totals.damaged.toLocaleString()}</span>
+                <span className="admin-condition-name">Damaged</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem' }}>Field Record Matrix</h4>
+              <button className="btn btn-secondary" onClick={loadSummary} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+                {loading ? <RefreshCw className="pulse" size={14} /> : <RefreshCw size={14} />} Refresh
+              </button>
+            </div>
+            <div className="input-row" style={{ flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div className="form-group" style={{ flex: '1 1 180px', marginBottom: 0 }}>
+                <select value={filterEstateId} onChange={(e) => handleEstateFilter(e.target.value)} style={{ fontSize: '0.85rem' }}>
+                  <option value="">All Estates</option>
+                  {estates.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: '1 1 150px', marginBottom: 0 }}>
+                <select value={filterDivisionId} onChange={(e) => setFilterDivisionId(e.target.value)} disabled={!filterEstateId} style={{ fontSize: '0.85rem' }}>
+                  <option value="">All Divisions</option>
+                  {divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Field Details - responsive cards on mobile, table on desktop */}
+            {fieldDetails.length === 0 ? (
+              <div className="text-muted" style={{ textAlign: 'center', padding: '1rem 0' }}>No fields found.</div>
+            ) : (
+              <>
+                {/* Desktop table */}
+                <div className="admin-table-desktop">
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Estate</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Division</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Field</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Records</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Healthy</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Runt</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Dead</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Damaged</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Last Recorded</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fieldDetails.map((f, i) => (
+                          <tr key={f.field_id || i} style={{ borderBottom: '1px solid var(--border-color)', opacity: f.total === 0 ? 0.5 : 1 }}>
+                            <td style={{ padding: '0.4rem 0.5rem' }}>{f.estate_name}</td>
+                            <td style={{ padding: '0.4rem 0.5rem' }}>{f.division_name}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>{f.field_code}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{f.total}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#4caf50' }}>{f.healthy}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#ff9800' }}>{f.runt}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#9e9e9e' }}>{f.dead}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#f44336' }}>{f.damaged}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}>{formatDate(f.last_recorded)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Mobile cards */}
+                <div className="admin-table-mobile">
+                  {fieldDetails.map((f, i) => (
+                    <div key={f.field_id || i} className="admin-field-card" style={{ opacity: f.total === 0 ? 0.55 : 1 }}>
+                      <div className="admin-field-card-header">
+                        <span style={{ fontWeight: 700 }}>{f.field_code}</span>
+                        <span className="admin-field-card-badge" style={{ background: f.total > 0 ? 'rgba(76,175,80,0.15)' : 'rgba(158,158,158,0.15)', color: f.total > 0 ? '#4caf50' : '#9e9e9e' }}>
+                          {f.total} records
+                        </span>
+                      </div>
+                      <div className="admin-field-card-meta">{f.estate_name} / {f.division_name}</div>
+                      {f.total > 0 && (
+                        <div className="admin-field-card-stats">
+                          <span style={{ color: '#4caf50' }}>H: {f.healthy}</span>
+                          <span style={{ color: '#ff9800' }}>R: {f.runt}</span>
+                          <span style={{ color: '#9e9e9e' }}>D: {f.dead}</span>
+                          <span style={{ color: '#f44336' }}>Dm: {f.damaged}</span>
+                          <span className="text-muted">{formatDate(f.last_recorded)}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
+          <div className="text-muted">No summary data available.</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ----------------------------------------------------
+// Pending Requests Section (inside DevicesTab)
+// ----------------------------------------------------
+function PendingRequestsSection({ token, onAuthError }) {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [actioning, setActioning] = useState(null);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  const loadRequests = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { adminCRUD } = await import('../services/supabaseSync');
+      const data = await adminCRUD(token, 'list_pending_requests');
+      if (data.success) {
+        setRequests(data.requests || []);
+      } else {
+        onAuthError(data.error);
+      }
+    } catch (err) {
+      if (err.message && err.message.includes('Invalid or expired')) {
+        onAuthError(err.message);
+      } else {
+        setError('Failed to load pending requests.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, onAuthError]);
+
+  useEffect(() => {
+    const run = async () => {
+      await loadRequests();
+    };
+    run();
+  }, [loadRequests]);
+
+  const handleAction = async (requestId, action) => {
+    const actionLabel = action === 'approve' ? 'approve' : 'deny';
+    if (!confirm(`Are you sure you want to ${actionLabel} this device request?`)) return;
+
+    setActioning(requestId + ':' + action);
+    setError('');
+    setSuccessMsg('');
+    try {
+      const { adminApproveDevice: approveDeviceFn } = await import('../services/supabaseSync');
+      const result = await approveDeviceFn(token, requestId, action);
+      if (result.success) {
+        setSuccessMsg(`Device request ${actionLabel}d successfully.`);
+        setRequests(prev => prev.filter(r => r.request_id !== requestId));
+      } else {
+        setError(result.error || `Failed to ${actionLabel} device.`);
+      }
+    } catch (err) {
+      if (err.message && err.message.includes('Invalid or expired')) {
+        onAuthError(err.message);
+      } else {
+        setError(`Failed to ${actionLabel}: ${err.message}`);
+      }
+    } finally {
+      setActioning(null);
+    }
+  };
+
+  const formatDate = (val) => {
+    if (!val) return '-';
+    try { return new Date(val).toLocaleString(); } catch { return String(val); }
+  };
+
+  return (
+    <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Clock size={18} color="#ff9800" /> Pending Requests ({requests.length})
+        </h3>
+        <button className="btn btn-secondary" onClick={loadRequests} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+          {loading ? <RefreshCw className="pulse" size={14} /> : <RefreshCw size={14} />} Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="warning-banner" style={{ background: 'rgba(244, 67, 54, 0.1)', color: '#f44336', borderColor: '#f44336', marginBottom: '0.75rem' }}>
+          <AlertTriangle size={14} /> {error}
+        </div>
+      )}
+      {successMsg && (
+        <div className="warning-banner" style={{ background: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', borderColor: '#4caf50', marginBottom: '0.75rem' }}>
+          <CheckCircle2 size={14} /> {successMsg}
+        </div>
+      )}
+
+      {loading && requests.length === 0 ? (
+        <div className="text-muted" style={{ textAlign: 'center', padding: '1rem 0' }}>Loading pending requests...</div>
+      ) : requests.length === 0 ? (
+        <div className="text-muted" style={{ textAlign: 'center', padding: '1rem 0' }}>No pending requests.</div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="admin-table-desktop">
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Operator</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Estate</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Device</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Location</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Requested</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {requests.map((r, i) => (
+                    <tr key={r.request_id || i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '0.5rem' }}>{r.operator_name || '-'}</td>
+                      <td style={{ padding: '0.5rem' }}>{r.estate_code || '-'}</td>
+                      <td style={{ padding: '0.5rem', fontSize: '0.75rem', fontFamily: 'monospace' }}>{(r.device_id_hash || '').substring(0, 12)}...</td>
+                      <td style={{ padding: '0.5rem' }}>
+                        {r.google_map_link ? (
+                          <a href={r.google_map_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.78rem', color: 'var(--accent-primary)' }}>View Map</a>
+                        ) : r.latitude ? (
+                          <span style={{ fontSize: '0.78rem' }}>{Number(r.latitude).toFixed(4)}, {Number(r.longitude).toFixed(4)}</span>
+                        ) : '-'}
+                      </td>
+                      <td style={{ padding: '0.5rem', fontSize: '0.78rem' }}>{formatDate(r.requested_at)}</td>
+                      <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center' }}>
+                          <button
+                            className="btn"
+                            onClick={() => handleAction(r.request_id, 'approve')}
+                            disabled={!!actioning}
+                            style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.75rem', background: 'var(--success)', color: '#fff', minHeight: '36px' }}
+                          >
+                            {actioning === r.request_id + ':approve' ? <RefreshCw className="pulse" size={12} /> : <CheckCircle2 size={12} />} Approve
+                          </button>
+                          <button
+                            className="btn btn-danger"
+                            onClick={() => handleAction(r.request_id, 'deny')}
+                            disabled={!!actioning}
+                            style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.75rem', minHeight: '36px' }}
+                          >
+                            {actioning === r.request_id + ':deny' ? <RefreshCw className="pulse" size={12} /> : <XCircle size={12} />} Deny
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="admin-table-mobile">
+            {requests.map((r, i) => (
+              <div key={r.request_id || i} className="admin-field-card">
+                <div className="admin-field-card-header">
+                  <span style={{ fontWeight: 700 }}><User size={14} style={{ verticalAlign: 'middle', marginRight: '0.3rem' }} />{r.operator_name || 'Unknown'}</span>
+                  <span className="admin-field-card-badge" style={{ background: 'rgba(255,152,0,0.15)', color: '#ff9800' }}>Pending</span>
+                </div>
+                <div className="admin-field-card-meta">
+                  Estate: {r.estate_code || '-'} | Requested: {formatDate(r.requested_at)}
+                </div>
+                <div className="admin-field-card-meta" style={{ fontSize: '0.72rem', fontFamily: 'monospace' }}>
+                  Device: {(r.device_id_hash || '').substring(0, 16)}...
+                </div>
+                {r.google_map_link && (
+                  <div style={{ marginTop: '0.3rem' }}>
+                    <a href={r.google_map_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.78rem', color: 'var(--accent-primary)' }}>View Location</a>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <button
+                    className="btn"
+                    onClick={() => handleAction(r.request_id, 'approve')}
+                    disabled={!!actioning}
+                    style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', background: 'var(--success)', color: '#fff', minHeight: '44px' }}
+                  >
+                    {actioning === r.request_id + ':approve' ? <RefreshCw className="pulse" size={14} /> : <CheckCircle2 size={14} />} Approve
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => handleAction(r.request_id, 'deny')}
+                    disabled={!!actioning}
+                    style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', minHeight: '44px' }}
+                  >
+                    {actioning === r.request_id + ':deny' ? <RefreshCw className="pulse" size={14} /> : <XCircle size={14} />} Deny
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -368,10 +787,12 @@ function QRCodesTab({ estates, divisions, fields }) {
 // Main Admin Page
 // ----------------------------------------------------
 export default function AdminPage() {
-  const [token, setToken] = useState(() => sessionStorage.getItem('admin_session_token') || null);
-  const [totpCode, setTotpCode] = useState('');
+  const [token, setToken] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   const [activeTab, setActiveTab] = useState('measurements');
   const [estates, setEstates] = useState([]);
@@ -401,6 +822,31 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
+    const initAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setToken(session.access_token);
+      }
+      setAuthInitialized(true);
+    };
+    initAuth();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setToken(null);
+        setConfigLoaded(false);
+        setMeasurements([]);
+      } else if (session) {
+        setToken(session.access_token);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     const fetchConfig = async () => {
       try {
         const { adminCRUD } = await import('../services/supabaseSync');
@@ -417,8 +863,7 @@ export default function AdminPage() {
           setConfigLoaded(true);
         } else {
           setError('Failed to load full configuration. Session may have expired.');
-          sessionStorage.removeItem('admin_session_token');
-          setToken(null);
+          await supabase.auth.signOut();
         }
       } catch {
         setError('Failed to fetch config.');
@@ -441,45 +886,40 @@ export default function AdminPage() {
     setFieldNoFilterId('');
   };
 
-  const handleVerify = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const cleanCode = (totpCode || '').replace(/\s+/g, '');
-    if (!cleanCode || cleanCode.length !== 6) {
-      setError('Please enter a valid 6-digit code.');
+    if (!email || !password) {
+      setError('Please enter email and password.');
       return;
     }
     setVerifying(true);
     setError('');
     try {
-      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/admin-auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'login', code: cleanCode }),
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
       });
-      const data = await res.json();
-      if (data.success && data.token) {
-        setToken(data.token);
-        sessionStorage.setItem('admin_session_token', data.token);
-      } else {
-        setError(data.error || 'Verification failed.');
+      if (signInError) throw signInError;
+      if (data.session) {
+        setToken(data.session.access_token);
       }
-    } catch {
-      setError('Network error. Could not verify.');
+    } catch (err) {
+      setError(err.message || 'Login failed.');
     } finally {
       setVerifying(false);
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('admin_session_token');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setToken(null);
     setMeasurements([]);
-    setTotpCode('');
+    setConfigLoaded(false);
   };
 
-  const handleAuthError = useCallback((msg) => {
+  const handleAuthError = useCallback(async (msg) => {
     setError(msg || 'Session expired. Please log in again.');
-    handleLogout();
+    await supabase.auth.signOut();
   }, []);
 
   const loadData = async () => {
@@ -558,13 +998,17 @@ export default function AdminPage() {
     }
   };
 
+  if (!authInitialized) {
+    return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+  }
+
   if (!token) {
     return (
       <div className="admin-login-page">
-        <div className="glass-card" style={{ maxWidth: '400px', width: '100%', padding: '2rem', textAlign: 'center' }}>
+        <div className="glass-card" style={{ maxWidth: '420px', width: '100%', padding: '2rem', textAlign: 'center' }}>
           <Lock size={48} color="var(--accent-primary)" style={{ marginBottom: '1rem' }} />
           <h1 style={{ margin: '0 0 0.5rem 0' }}>GirthTracker Admin</h1>
-          <p className="text-muted" style={{ marginBottom: '2rem' }}>Restricted access</p>
+          <p className="text-muted" style={{ marginBottom: '2rem' }}>Restricted access - Sign in to continue</p>
           
           {error && (
             <div className="warning-banner" style={{ background: 'rgba(244, 67, 54, 0.1)', color: '#f44336', borderColor: '#f44336', marginBottom: '1rem' }}>
@@ -572,22 +1016,32 @@ export default function AdminPage() {
             </div>
           )}
 
-          <form onSubmit={handleVerify}>
-            <div className="form-group">
+          <form onSubmit={handleLogin}>
+            <div className="form-group" style={{ marginBottom: '0.75rem' }}>
               <input
-                type="text"
-                placeholder="6-digit Authenticator Code"
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value)}
-                maxLength={6}
-                pattern="\d*"
-                style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '0.2rem' }}
+                type="email"
+                placeholder="Admin Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                style={{ textAlign: 'center', fontSize: '1rem' }}
                 required
               />
             </div>
-            <button type="submit" className="btn" disabled={verifying} style={{ marginTop: '1rem' }}>
+            <div className="form-group">
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                style={{ textAlign: 'center', fontSize: '1rem' }}
+                required
+              />
+            </div>
+            <button type="submit" className="btn" disabled={verifying} style={{ marginTop: '1rem', minHeight: '44px' }}>
               {verifying ? <RefreshCw className="pulse" size={20} /> : <Unlock size={20} />}
-              {verifying ? 'Verifying...' : 'Verify'}
+              {verifying ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
         </div>
@@ -604,6 +1058,7 @@ export default function AdminPage() {
   const abnormal = measurements.filter(m => isAbnormal(m)).length;
 
   const tabs = [
+    { id: 'overview', label: 'Overview', icon: <BarChart3 size={16} /> },
     { id: 'measurements', label: 'Measurements', icon: <Database size={16} /> },
     { id: 'devices', label: 'Devices', icon: <Smartphone size={16} /> },
     { id: 'config', label: 'Configuration', icon: <Settings2 size={16} /> },
@@ -612,12 +1067,12 @@ export default function AdminPage() {
 
   return (
     <div className="admin-page">
-      <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 'clamp(1rem, 4vw, 1.25rem)' }}>
           <Database size={24} color="var(--accent-primary)" /> Admin Dashboard
         </h2>
-        <button className="btn btn-secondary" onClick={handleLogout} style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
-          <LogOut size={16} /> Logout
+        <button className="btn btn-secondary" onClick={handleLogout} style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.8rem', minHeight: '36px' }}>
+          <LogOut size={16} /> Sign Out
         </button>
       </div>
 
@@ -627,19 +1082,23 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Tab Navigation */}
-      <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '1rem', background: 'var(--bg-card)', borderRadius: '8px', padding: '0.25rem', border: '1px solid var(--glass-border)' }}>
+      {/* Tab Navigation - scrollable on mobile */}
+      <div className="admin-tab-bar">
         {tabs.map(tab => (
           <button
             key={tab.id}
-            className={`btn ${activeTab === tab.id ? '' : 'btn-secondary'}`}
+            className={`admin-tab-btn ${activeTab === tab.id ? 'admin-tab-active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
-            style={{ flex: 1, padding: '0.5rem 0.3rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', borderRadius: '6px' }}
           >
-            {tab.icon} {tab.label}
+            {tab.icon} <span className="admin-tab-label">{tab.label}</span>
           </button>
         ))}
       </div>
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <SummaryTab token={token} onAuthError={handleAuthError} />
+      )}
 
       {/* Measurements Tab */}
       {activeTab === 'measurements' && (
@@ -752,7 +1211,10 @@ export default function AdminPage() {
 
       {/* Devices Tab */}
       {activeTab === 'devices' && (
-        <DevicesTab token={token} onAuthError={handleAuthError} />
+        <>
+          <PendingRequestsSection token={token} onAuthError={handleAuthError} />
+          <DevicesTab token={token} onAuthError={handleAuthError} />
+        </>
       )}
       
       {/* Configuration Tab */}

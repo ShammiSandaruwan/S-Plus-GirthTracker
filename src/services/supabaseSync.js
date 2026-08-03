@@ -179,11 +179,26 @@ export async function adminCRUD(adminToken, action, payload = {}) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-admin-token': adminToken,
+      'Authorization': `Bearer ${adminToken}`,
     },
     body: JSON.stringify({ action, ...payload })
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || result.message || `Admin CRUD failed for action: ${action}`);
+  return result;
+}
+
+export async function adminApproveDevice(adminToken, requestId, action) {
+  const url = `${SUPABASE_FUNCTIONS_URL}/approve-device`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({ action, requestId })
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || result.message || 'Approval action failed');
   return result;
 }

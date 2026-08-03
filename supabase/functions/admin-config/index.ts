@@ -12,45 +12,44 @@ serve(async (req) => {
   }
 
   try {
-    const adminToken = req.headers.get('x-admin-token');
+    const authHeader = req.headers.get('Authorization');
+    const adminToken = authHeader ? authHeader.replace('Bearer ', '') : null;
     if (!adminToken) {
-      return new Response(JSON.stringify({ error: 'Missing admin token' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      return new Response(JSON.stringify({ error: 'Missing authorization token' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
     
-    // Validate admin session via admin-auth
-    if (supabaseUrl) {
-      try {
-        const valRes = await fetch(`${supabaseUrl}/functions/v1/admin-auth`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${adminToken}`
-          },
-          body: JSON.stringify({ action: 'validate_session' }),
-        });
-        const valResult = await valRes.json();
-        if (!valResult.valid) {
-          return new Response(JSON.stringify({ error: valResult.error || 'Invalid or expired admin session' }), {
-            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-      } catch (err: any) {
-        return respond({ error: 'Validation failed: ' + (err.message || JSON.stringify(err)) }, 500);
-      }
-    }
-
     let supabaseAdmin;
     try {
-      supabaseAdmin = createClient(
-        Deno.env.get('SUPABASE_URL') || '',
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-      );
+      supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
     } catch (err: any) {
       return respond({ error: 'Failed to create Supabase client: ' + (err.message || JSON.stringify(err)) }, 500);
+    }
+
+    // 1. Validate JWT via Supabase Auth
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(adminToken);
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 2. Check if user is in admin_users allowlist
+    const { data: adminUser, error: adminError } = await supabaseAdmin
+      .from('admin_users')
+      .select('id')
+      .eq('auth_uid', user.id)
+      .eq('active', true)
+      .single();
+
+    if (adminError || !adminUser) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     const body = await req.json();
@@ -94,6 +93,14 @@ serve(async (req) => {
         return await listDevices(supabaseAdmin);
       case 'revoke_device':
         return await revokeDevice(supabaseAdmin, body);
+
+      // === SUMMARY ===
+      case 'get_summary':
+        return await getSummary(supabaseAdmin, body);
+
+      // === PENDING REQUESTS ===
+      case 'list_pending_requests':
+        return await listPendingRequests(supabaseAdmin);
 
       // === MIGRATION ===
       case 'migrate_devices':
@@ -500,5 +507,176 @@ async function backfillFieldIds(db: any, body: any) {
       ? 'Some measurements could not be matched. Create the missing fields and re-run.'
       : 'All measurements backfilled successfully.',
     dryRun
+  });
+}
+
+// ======================== SUMMARY ========================
+
+async function getSummary(db: any, body: any) {
+  // 1. Get all estates, divisions, fields
+  const { data: allEstates } = await db.from('estates').select('id, code, name, active').order('name');
+  const { data: allDivisions } = await db.from('divisions').select('id, code, name, active, estate_id').order('name');
+  const { data: allFields } = await db.from('fields').select('id, field_code, active, division_id, estate_id').order('field_code');
+
+  if (!allEstates || !allDivisions || !allFields) {
+    return respond({ error: 'Failed to load configuration data' }, 500);
+  }
+
+  // 2. Get aggregate counts from census_measurements grouped by field_id
+  const { data: fieldCounts, error: countErr } = await db
+    .rpc('get_field_record_summary');
+
+  // Fallback: if RPC does not exist, use a direct query
+  let fieldCountMap: Record<string, any> = {};
+  if (countErr || !fieldCounts) {
+    // Direct query fallback - get counts per field_id
+    const { data: rawCounts } = await db
+      .from('census_measurements')
+      .select('field_id, tree_condition')
+      .not('field_id', 'is', null);
+
+    if (rawCounts) {
+      for (const row of rawCounts) {
+        if (!row.field_id) continue;
+        if (!fieldCountMap[row.field_id]) {
+          fieldCountMap[row.field_id] = { total: 0, healthy: 0, runt: 0, dead: 0, damaged: 0, last_recorded: null };
+        }
+        fieldCountMap[row.field_id].total++;
+        const cond = row.tree_condition || 'healthy';
+        if (fieldCountMap[row.field_id][cond] !== undefined) {
+          fieldCountMap[row.field_id][cond]++;
+        }
+      }
+    }
+
+    // Get last recorded dates per field
+    const { data: lastDates } = await db
+      .from('census_measurements')
+      .select('field_id, measured_at')
+      .not('field_id', 'is', null)
+      .order('measured_at', { ascending: false });
+
+    if (lastDates) {
+      const seen = new Set<string>();
+      for (const row of lastDates) {
+        if (!row.field_id || seen.has(row.field_id)) continue;
+        seen.add(row.field_id);
+        if (fieldCountMap[row.field_id]) {
+          fieldCountMap[row.field_id].last_recorded = row.measured_at;
+        }
+      }
+    }
+  } else {
+    for (const row of fieldCounts) {
+      fieldCountMap[row.field_id] = row;
+    }
+  }
+
+  // 3. Build summary response
+  let totalRecords = 0;
+  let fieldsWithRecords = 0;
+  let fieldsWithoutRecords = 0;
+  let conditionTotals = { healthy: 0, runt: 0, dead: 0, damaged: 0 };
+
+  const fieldDetails: any[] = [];
+
+  for (const field of allFields) {
+    const counts = fieldCountMap[field.id];
+    const division = allDivisions.find((d: any) => d.id === field.division_id);
+    const estate = allEstates.find((e: any) => e.id === field.estate_id);
+
+    if (counts && counts.total > 0) {
+      fieldsWithRecords++;
+      totalRecords += counts.total;
+      conditionTotals.healthy += counts.healthy || 0;
+      conditionTotals.runt += counts.runt || 0;
+      conditionTotals.dead += counts.dead || 0;
+      conditionTotals.damaged += counts.damaged || 0;
+
+      fieldDetails.push({
+        field_id: field.id,
+        field_code: field.field_code,
+        field_active: field.active,
+        division_id: field.division_id,
+        division_name: division?.name || '-',
+        estate_id: field.estate_id,
+        estate_name: estate?.name || '-',
+        total: counts.total,
+        healthy: counts.healthy || 0,
+        runt: counts.runt || 0,
+        dead: counts.dead || 0,
+        damaged: counts.damaged || 0,
+        last_recorded: counts.last_recorded || null,
+      });
+    } else {
+      fieldsWithoutRecords++;
+      fieldDetails.push({
+        field_id: field.id,
+        field_code: field.field_code,
+        field_active: field.active,
+        division_id: field.division_id,
+        division_name: division?.name || '-',
+        estate_id: field.estate_id,
+        estate_name: estate?.name || '-',
+        total: 0,
+        healthy: 0,
+        runt: 0,
+        dead: 0,
+        damaged: 0,
+        last_recorded: null,
+      });
+    }
+  }
+
+  // Optional: filter by estate_id
+  let filtered = fieldDetails;
+  if (body.estate_id) {
+    filtered = filtered.filter((f: any) => f.estate_id === body.estate_id);
+  }
+  if (body.division_id) {
+    filtered = filtered.filter((f: any) => f.division_id === body.division_id);
+  }
+
+  return respond({
+    success: true,
+    summary: {
+      total_records: totalRecords,
+      fields_with_records: fieldsWithRecords,
+      fields_without_records: fieldsWithoutRecords,
+      total_fields: allFields.length,
+      condition_totals: conditionTotals,
+      estates: allEstates,
+      divisions: allDivisions,
+    },
+    field_details: filtered,
+  });
+}
+
+// ======================== PENDING REQUESTS ========================
+
+async function listPendingRequests(db: any) {
+  const { data, error } = await db
+    .from('access_requests')
+    .select('*')
+    .eq('status', 'pending')
+    .order('requested_at', { ascending: false });
+
+  if (error) throw error;
+
+  return respond({
+    success: true,
+    requests: (data || []).map((r: any) => ({
+      request_id: r.request_id,
+      estate_code: r.estate_code,
+      operator_name: r.operator_name,
+      device_id_hash: r.device_id_hash,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      gps_accuracy: r.gps_accuracy,
+      google_map_link: r.google_map_link,
+      requested_at: r.requested_at,
+      user_agent: r.user_agent,
+      app_version: r.app_version,
+    })),
   });
 }
