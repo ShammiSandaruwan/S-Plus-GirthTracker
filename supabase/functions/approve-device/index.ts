@@ -103,8 +103,8 @@ serve(async (req) => {
       // --- END TELEGRAM WEBHOOK HANDLING ---
 
       // --- 2. ADMIN DASHBOARD API HANDLING ---
-      const authHeader = req.headers.get('Authorization');
-      const adminToken = authHeader ? authHeader.replace('Bearer ', '') : null;
+      const authHeader = req.headers.get('Authorization') || req.headers.get('x-admin-token');
+      const adminToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '') : null;
       if (!adminToken) {
         return new Response(JSON.stringify({ error: 'Unauthorized: Missing authorization token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }

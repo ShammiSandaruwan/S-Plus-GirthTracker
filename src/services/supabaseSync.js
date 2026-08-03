@@ -85,6 +85,7 @@ export async function fetchAdminMeasurements(adminToken, filters) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
       'x-admin-token': adminToken,
     },
     body: JSON.stringify(filters)
@@ -105,6 +106,7 @@ export async function triggerAdminExport(adminToken, filters) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
       'x-admin-token': adminToken,
     },
     body: JSON.stringify(filters)
