@@ -12,6 +12,7 @@ import { checkAbnormal } from './services/analytics';
 import { syncToSupabase, undoFromSupabase, checkDuplicateInDexie } from './services/supabaseSync';
 import { SUPABASE_URL } from './services/supabaseClient';
 import AdminPage from './components/AdminPage';
+import SetPassword from './components/SetPassword';
 import './index.css';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.1';
@@ -74,6 +75,10 @@ function App() {
 
   if (window.location.pathname === '/mod') {
     return <AdminPage />;
+  }
+
+  if (window.location.pathname === '/complete-invite') {
+    return <SetPassword />;
   }
 
   if (IS_DISABLED_MODE) {
