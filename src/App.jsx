@@ -1275,7 +1275,7 @@ function getFriendlySyncErrorMessage(errorObj) {
               <div style={{display: 'flex', gap: '0.5rem'}}>
                 <input 
                   type="text" 
-                  placeholder={treeCondition === 'dead' ? 'e.g. Fallen tree, trunk rot' : 'e.g. Elephant attack, snapped top'} 
+                  placeholder={treeCondition === 'dead' ? 'e.g. Fallen tree, trunk rot' : 'e.g. Porcupine damage, deer attack, snapped top'} 
                   value={conditionNote}
                   onChange={(e) => setConditionNote(e.target.value)}
                   style={{flex: 1}}

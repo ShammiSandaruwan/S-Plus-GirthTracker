@@ -8,7 +8,7 @@ describe('Tree Condition Support & Validation', () => {
     { id: 2, treeNo: 2, girth: 22, girthCm: 55.88, treeCondition: 'healthy', syncStatus: 'synced' },
     { id: 3, treeNo: 3, girth: 12, girthCm: 30.48, treeCondition: 'runt', syncStatus: 'pending' },
     { id: 4, treeNo: 4, girth: null, girthCm: null, treeCondition: 'dead', conditionNote: 'Fallen tree', syncStatus: 'pending' },
-    { id: 5, treeNo: 5, girth: null, girthCm: null, treeCondition: 'damaged', conditionNote: 'Elephant attack', syncStatus: 'pending' },
+    { id: 5, treeNo: 5, girth: null, girthCm: null, treeCondition: 'damaged', conditionNote: 'Porcupine damage', syncStatus: 'pending' },
   ];
 
   it('correctly calculates field insights excluding dead/damaged from girth averages', () => {
