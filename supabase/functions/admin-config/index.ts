@@ -517,60 +517,20 @@ async function backfillFieldIds(db: any, body: any) {
 // ======================== SUMMARY ========================
 
 async function getSummary(db: any, body: any) {
-  // 1. Get all estates, divisions, fields
+  // 1. Get all estates, divisions, fields (now including extent)
   const { data: allEstates } = await db.from('estates').select('id, code, name, active').order('name');
   const { data: allDivisions } = await db.from('divisions').select('id, code, name, active, estate_id').order('name');
-  const { data: allFields } = await db.from('fields').select('id, field_code, active, division_id, estate_id').order('field_code');
+  const { data: allFields } = await db.from('fields').select('id, field_code, active, division_id, estate_id, extent').order('field_code');
 
   if (!allEstates || !allDivisions || !allFields) {
     return respond({ error: 'Failed to load configuration data' }, 500);
   }
 
-  // 2. Get aggregate counts from census_measurements grouped by field_id
-  const { data: fieldCounts, error: countErr } = await db
-    .rpc('get_field_record_summary');
+  // 2. Get aggregate counts from census_measurements using the new v2 RPC
+  const { data: fieldCounts, error: countErr } = await db.rpc('get_field_summary_v2');
 
-  // Fallback: if RPC does not exist, use a direct query
   let fieldCountMap: Record<string, any> = {};
-  if (countErr || !fieldCounts) {
-    // Direct query fallback - get counts per field_id
-    const { data: rawCounts } = await db
-      .from('census_measurements')
-      .select('field_id, tree_condition')
-      .not('field_id', 'is', null);
-
-    if (rawCounts) {
-      for (const row of rawCounts) {
-        if (!row.field_id) continue;
-        if (!fieldCountMap[row.field_id]) {
-          fieldCountMap[row.field_id] = { total: 0, healthy: 0, runt: 0, dead: 0, damaged: 0, last_recorded: null };
-        }
-        fieldCountMap[row.field_id].total++;
-        const cond = row.tree_condition || 'healthy';
-        if (fieldCountMap[row.field_id][cond] !== undefined) {
-          fieldCountMap[row.field_id][cond]++;
-        }
-      }
-    }
-
-    // Get last recorded dates per field
-    const { data: lastDates } = await db
-      .from('census_measurements')
-      .select('field_id, measured_at')
-      .not('field_id', 'is', null)
-      .order('measured_at', { ascending: false });
-
-    if (lastDates) {
-      const seen = new Set<string>();
-      for (const row of lastDates) {
-        if (!row.field_id || seen.has(row.field_id)) continue;
-        seen.add(row.field_id);
-        if (fieldCountMap[row.field_id]) {
-          fieldCountMap[row.field_id].last_recorded = row.measured_at;
-        }
-      }
-    }
-  } else {
+  if (!countErr && fieldCounts) {
     for (const row of fieldCounts) {
       fieldCountMap[row.field_id] = row;
     }
@@ -580,7 +540,6 @@ async function getSummary(db: any, body: any) {
   let totalRecords = 0;
   let fieldsWithRecords = 0;
   let fieldsWithoutRecords = 0;
-  let conditionTotals = { healthy: 0, runt: 0, dead: 0, damaged: 0 };
 
   const fieldDetails: any[] = [];
 
@@ -589,46 +548,26 @@ async function getSummary(db: any, body: any) {
     const division = allDivisions.find((d: any) => d.id === field.division_id);
     const estate = allEstates.find((e: any) => e.id === field.estate_id);
 
-    if (counts && counts.total > 0) {
+    if (counts && counts.total_recorded > 0) {
       fieldsWithRecords++;
-      totalRecords += counts.total;
-      conditionTotals.healthy += counts.healthy || 0;
-      conditionTotals.runt += counts.runt || 0;
-      conditionTotals.dead += counts.dead || 0;
-      conditionTotals.damaged += counts.damaged || 0;
+      totalRecords += Number(counts.total_recorded);
 
       fieldDetails.push({
         field_id: field.id,
         field_code: field.field_code,
         field_active: field.active,
+        extent: field.extent,
         division_id: field.division_id,
         division_name: division?.name || '-',
         estate_id: field.estate_id,
         estate_name: estate?.name || '-',
-        total: counts.total,
-        healthy: counts.healthy || 0,
-        runt: counts.runt || 0,
-        dead: counts.dead || 0,
-        damaged: counts.damaged || 0,
-        last_recorded: counts.last_recorded || null,
+        total: Number(counts.total_recorded),
+        last_tree_no: counts.last_tree_no || '-',
+        last_recorded: counts.last_recorded_date || null,
       });
     } else {
       fieldsWithoutRecords++;
-      fieldDetails.push({
-        field_id: field.id,
-        field_code: field.field_code,
-        field_active: field.active,
-        division_id: field.division_id,
-        division_name: division?.name || '-',
-        estate_id: field.estate_id,
-        estate_name: estate?.name || '-',
-        total: 0,
-        healthy: 0,
-        runt: 0,
-        dead: 0,
-        damaged: 0,
-        last_recorded: null,
-      });
+      // Do not push to fieldDetails since we only want fields with data
     }
   }
 
@@ -648,7 +587,6 @@ async function getSummary(db: any, body: any) {
       fields_with_records: fieldsWithRecords,
       fields_without_records: fieldsWithoutRecords,
       total_fields: allFields.length,
-      condition_totals: conditionTotals,
       estates: allEstates,
       divisions: allDivisions,
     },

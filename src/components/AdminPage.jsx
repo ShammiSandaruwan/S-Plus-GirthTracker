@@ -145,29 +145,6 @@ function SummaryTab({ token, onAuthError }) {
             </div>
           </div>
 
-          {/* Condition Breakdown */}
-          <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
-            <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem' }}>Tree Condition Breakdown</h4>
-            <div className="admin-condition-grid">
-              <div className="admin-condition-chip" style={{ borderLeftColor: '#4caf50' }}>
-                <span className="admin-condition-count">{summary.condition_totals.healthy.toLocaleString()}</span>
-                <span className="admin-condition-name">Healthy</span>
-              </div>
-              <div className="admin-condition-chip" style={{ borderLeftColor: '#ff9800' }}>
-                <span className="admin-condition-count">{summary.condition_totals.runt.toLocaleString()}</span>
-                <span className="admin-condition-name">Runt</span>
-              </div>
-              <div className="admin-condition-chip" style={{ borderLeftColor: '#9e9e9e' }}>
-                <span className="admin-condition-count">{summary.condition_totals.dead.toLocaleString()}</span>
-                <span className="admin-condition-name">Dead</span>
-              </div>
-              <div className="admin-condition-chip" style={{ borderLeftColor: '#f44336' }}>
-                <span className="admin-condition-count">{summary.condition_totals.damaged.toLocaleString()}</span>
-                <span className="admin-condition-name">Damaged</span>
-              </div>
-            </div>
-          </div>
-
           {/* Filters */}
           <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
@@ -205,25 +182,21 @@ function SummaryTab({ token, onAuthError }) {
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Estate</th>
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Division</th>
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Field</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Records</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Healthy</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Runt</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Dead</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Damaged</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Extent</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Recorded</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Last Tree #</th>
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Last Recorded</th>
                         </tr>
                       </thead>
                       <tbody>
                         {fieldDetails.map((f, i) => (
-                          <tr key={f.field_id || i} style={{ borderBottom: '1px solid var(--border-color)', opacity: f.total === 0 ? 0.5 : 1 }}>
+                          <tr key={f.field_id || i} style={{ borderBottom: '1px solid var(--border-color)' }}>
                             <td style={{ padding: '0.4rem 0.5rem' }}>{f.estate_name}</td>
                             <td style={{ padding: '0.4rem 0.5rem' }}>{f.division_name}</td>
                             <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>{f.field_code}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.extent || '-'}</td>
                             <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{f.total}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#4caf50' }}>{f.healthy}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#ff9800' }}>{f.runt}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#9e9e9e' }}>{f.dead}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#f44336' }}>{f.damaged}</td>
+                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.last_tree_no}</td>
                             <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}>{formatDate(f.last_recorded)}</td>
                           </tr>
                         ))}
@@ -235,23 +208,19 @@ function SummaryTab({ token, onAuthError }) {
                 {/* Mobile cards */}
                 <div className="admin-table-mobile">
                   {fieldDetails.map((f, i) => (
-                    <div key={f.field_id || i} className="admin-field-card" style={{ opacity: f.total === 0 ? 0.55 : 1 }}>
+                    <div key={f.field_id || i} className="admin-field-card">
                       <div className="admin-field-card-header">
                         <span style={{ fontWeight: 700 }}>{f.field_code}</span>
-                        <span className="admin-field-card-badge" style={{ background: f.total > 0 ? 'rgba(76,175,80,0.15)' : 'rgba(158,158,158,0.15)', color: f.total > 0 ? '#4caf50' : '#9e9e9e' }}>
-                          {f.total} records
+                        <span className="admin-field-card-badge" style={{ background: 'rgba(76,175,80,0.15)', color: '#4caf50' }}>
+                          {f.total} trees
                         </span>
                       </div>
                       <div className="admin-field-card-meta">{f.estate_name} / {f.division_name}</div>
-                      {f.total > 0 && (
-                        <div className="admin-field-card-stats">
-                          <span style={{ color: '#4caf50' }}>H: {f.healthy}</span>
-                          <span style={{ color: '#ff9800' }}>R: {f.runt}</span>
-                          <span style={{ color: '#9e9e9e' }}>D: {f.dead}</span>
-                          <span style={{ color: '#f44336' }}>Dm: {f.damaged}</span>
-                          <span className="text-muted">{formatDate(f.last_recorded)}</span>
-                        </div>
-                      )}
+                      <div className="admin-field-card-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                        <div className="text-muted" style={{ fontSize: '0.75rem' }}>Extent: <span style={{ color: 'var(--text-color)' }}>{f.extent || '-'}</span></div>
+                        <div className="text-muted" style={{ fontSize: '0.75rem' }}>Last Tree: <span style={{ color: 'var(--text-color)' }}>{f.last_tree_no}</span></div>
+                        <div className="text-muted" style={{ fontSize: '0.75rem', gridColumn: 'span 2' }}>Last Rec: <span style={{ color: 'var(--text-color)' }}>{formatDate(f.last_recorded)}</span></div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -794,7 +763,7 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [authInitialized, setAuthInitialized] = useState(false);
 
-  const [activeTab, setActiveTab] = useState('measurements');
+  const [activeTab, setActiveTab] = useState('overview');
   const [estates, setEstates] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [fields, setFields] = useState([]);
