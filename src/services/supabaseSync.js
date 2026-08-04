@@ -81,17 +81,28 @@ export async function checkDuplicateInDexie(fieldId, estate, division, fieldNo, 
 export async function fetchAdminMeasurements(adminToken, filters) {
   const url = `${SUPABASE_FUNCTIONS_URL}/admin-fetch`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${adminToken}`,
-      'x-admin-token': adminToken,
-    },
-    body: JSON.stringify(filters)
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`,
+        'x-admin-token': adminToken,
+      },
+      body: JSON.stringify(filters)
+    });
+  } catch (err) {
+    throw new Error(err.message || 'Network request failed', { cause: err });
+  }
 
-  const result = await response.json();
+  let result;
+  try {
+    result = await response.json();
+  } catch (parseErr) {
+    throw new Error(`Server returned HTTP ${response.status}`, { cause: parseErr });
+  }
+
   if (!response.ok) {
     throw new Error(result.error || result.message || 'Failed to fetch admin measurements');
   }
@@ -102,17 +113,28 @@ export async function fetchAdminMeasurements(adminToken, filters) {
 export async function triggerAdminExport(adminToken, filters) {
   const url = `${SUPABASE_FUNCTIONS_URL}/export-field`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${adminToken}`,
-      'x-admin-token': adminToken,
-    },
-    body: JSON.stringify(filters)
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`,
+        'x-admin-token': adminToken,
+      },
+      body: JSON.stringify(filters)
+    });
+  } catch (err) {
+    throw new Error(err.message || 'Network request failed', { cause: err });
+  }
 
-  const result = await response.json();
+  let result;
+  try {
+    result = await response.json();
+  } catch (parseErr) {
+    throw new Error(`Server returned HTTP ${response.status}`, { cause: parseErr });
+  }
+
   if (!response.ok) {
     throw new Error(result.error || result.message || 'Failed to trigger export');
   }

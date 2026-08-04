@@ -54,7 +54,8 @@ function AdminMap({ measurements, filter, mapRef }) {
 // ----------------------------------------------------
 // Summary Tab (Overview)
 // ----------------------------------------------------
-function SummaryTab({ token, onAuthError }) {
+function SummaryTab({ token, onAuthError, onSelectField }) {
+
   const [summary, setSummary] = useState(null);
   const [fieldDetails, setFieldDetails] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -188,20 +189,53 @@ function SummaryTab({ token, onAuthError }) {
                           <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Recorded</th>
                           <th style={{ padding: '0.5rem', textAlign: 'right' }}>Last Tree #</th>
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Last Recorded</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {fieldDetails.map((f, i) => (
-                          <tr key={f.field_id || i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                            <td style={{ padding: '0.4rem 0.5rem' }}>{f.estate_name}</td>
-                            <td style={{ padding: '0.4rem 0.5rem' }}>{f.division_name}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>{f.field_code}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.extent || '-'}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{f.total}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.last_tree_no}</td>
-                            <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}>{formatDate(f.last_recorded)}</td>
-                          </tr>
-                        ))}
+                        {fieldDetails.map((f, i) => {
+                          const isClickable = Boolean(f.field_id && onSelectField);
+                          return (
+                            <tr
+                              key={f.field_id || i}
+                              onClick={() => {
+                                if (isClickable) {
+                                  onSelectField({
+                                    fieldId: f.field_id,
+                                    fieldCode: f.field_code,
+                                    divisionName: f.division_name,
+                                    estateName: f.estate_name,
+                                    extentHa: f.extent
+                                  });
+                                }
+                              }}
+                              style={{
+                                borderBottom: '1px solid var(--border-color)',
+                                cursor: isClickable ? 'pointer' : 'default',
+                                transition: 'background 0.2s'
+                              }}
+                            >
+                              <td style={{ padding: '0.4rem 0.5rem' }}>{f.estate_name}</td>
+                              <td style={{ padding: '0.4rem 0.5rem' }}>{f.division_name}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>{f.field_code}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.extent || '-'}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{f.total}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.last_tree_no}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}>{formatDate(f.last_recorded)}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center' }}>
+                                {isClickable ? (
+                                  <span style={{ color: 'var(--accent-primary)', fontSize: '0.78rem', fontWeight: 600 }}>
+                                    View Details →
+                                  </span>
+                                ) : (
+                                  <span className="text-muted" style={{ fontSize: '0.75rem', fontStyle: 'italic' }}>
+                                    -
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -209,23 +243,47 @@ function SummaryTab({ token, onAuthError }) {
 
                 {/* Mobile cards */}
                 <div className="admin-table-mobile">
-                  {fieldDetails.map((f, i) => (
-                    <div key={f.field_id || i} className="admin-field-card">
-                      <div className="admin-field-card-header">
-                        <span style={{ fontWeight: 700 }}>{f.field_code}</span>
-                        <span className="admin-field-card-badge" style={{ background: 'rgba(76,175,80,0.15)', color: '#4caf50' }}>
-                          {f.total} trees
-                        </span>
+                  {fieldDetails.map((f, i) => {
+                    const isClickable = Boolean(f.field_id && onSelectField);
+                    return (
+                      <div
+                        key={f.field_id || i}
+                        className="admin-field-card"
+                        onClick={() => {
+                          if (isClickable) {
+                            onSelectField({
+                              fieldId: f.field_id,
+                              fieldCode: f.field_code,
+                              divisionName: f.division_name,
+                              estateName: f.estate_name,
+                              extentHa: f.extent
+                            });
+                          }
+                        }}
+                        style={{ cursor: isClickable ? 'pointer' : 'default' }}
+                      >
+                        <div className="admin-field-card-header">
+                          <span style={{ fontWeight: 700 }}>{f.field_code}</span>
+                          <span className="admin-field-card-badge" style={{ background: 'rgba(76,175,80,0.15)', color: '#4caf50' }}>
+                            {f.total} trees
+                          </span>
+                        </div>
+                        <div className="admin-field-card-meta">{f.estate_name} / {f.division_name}</div>
+                        <div className="admin-field-card-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>Extent: <span style={{ color: 'var(--text-color)' }}>{f.extent || '-'}</span></div>
+                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>Last Tree: <span style={{ color: 'var(--text-color)' }}>{f.last_tree_no}</span></div>
+                          <div className="text-muted" style={{ fontSize: '0.75rem', gridColumn: 'span 2' }}>Last Rec: <span style={{ color: 'var(--text-color)' }}>{formatDate(f.last_recorded)}</span></div>
+                        </div>
+                        {isClickable && (
+                          <div style={{ marginTop: '0.5rem', textAlign: 'right', fontSize: '0.78rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                            View Details →
+                          </div>
+                        )}
                       </div>
-                      <div className="admin-field-card-meta">{f.estate_name} / {f.division_name}</div>
-                      <div className="admin-field-card-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                        <div className="text-muted" style={{ fontSize: '0.75rem' }}>Extent: <span style={{ color: 'var(--text-color)' }}>{f.extent || '-'}</span></div>
-                        <div className="text-muted" style={{ fontSize: '0.75rem' }}>Last Tree: <span style={{ color: 'var(--text-color)' }}>{f.last_tree_no}</span></div>
-                        <div className="text-muted" style={{ fontSize: '0.75rem', gridColumn: 'span 2' }}>Last Rec: <span style={{ color: 'var(--text-color)' }}>{formatDate(f.last_recorded)}</span></div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
+
               </>
             )}
           </div>
@@ -1316,8 +1374,9 @@ export default function AdminPage() {
 
       {/* Overview Tab */}
       {activeTab === 'overview' && (
-        <SummaryTab token={token} onAuthError={handleAuthError} />
+        <SummaryTab token={token} onAuthError={handleAuthError} onSelectField={setSelectedFieldForDrilldown} />
       )}
+
 
       {/* Measurements Tab */}
       {activeTab === 'measurements' && (

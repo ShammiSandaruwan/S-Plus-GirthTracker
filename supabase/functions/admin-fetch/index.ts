@@ -51,10 +51,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
-    }
-
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
     // Allow fetching across all estates if no specific estate or estate_id is provided
     // If estate_id is provided, use it. Else fallback to text.
     let query = supabaseAdmin
