@@ -1059,59 +1059,324 @@ export default function AdminPage() {
   const [selectedFieldForDrilldown, setSelectedFieldForDrilldown] = useState(null);
   const mapRef = useRef(null);
 
-  const matrixGroups = useMemo(() => {
-    if (!measurements || measurements.length === 0) return [];
-    const map = new Map();
-    measurements.forEach(m => {
-      const estateStr = String(m.estate || '').trim();
-      const divStr = String(m.division || '').trim();
-      const fieldNoStr = String(m.fieldNo || '').trim();
-      const key = `${estateStr}|${divStr}|${fieldNoStr}`;
-      
-      if (!map.has(key)) {
-        map.set(key, { estateStr, divStr, fieldNoStr, count: 0, sampleFieldId: m.fieldId || m.field_id || null });
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
+
+  const censusSummaryData = useMemo(() => {
+    if (!measurements || measurements.length === 0) {
+      return { rows: [], totals: null };
+    }
+
+    // Group measurements by field_id or fallback key
+    const groupsMap = new Map();
+
+    measurements.forEach((m) => {
+      const fId = m.fieldId || m.field_id;
+      const key = fId || `${m.estate}|${m.division}|${m.fieldNo}`;
+
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, { fieldId: fId, measurements: [] });
       }
-      map.get(key).count++;
+      groupsMap.get(key).measurements.push(m);
     });
 
-    const list = [];
-    map.forEach(group => {
-      const estateLower = group.estateStr.toLowerCase();
-      const divLower = group.divStr.toLowerCase();
-      const fieldLower = group.fieldNoStr.toLowerCase();
+    const rows = [];
 
-      const configMatch = fields.find(f => {
-        const fCodeLower = (f.field_code || '').toLowerCase();
-        if (fCodeLower !== fieldLower) return false;
+    groupsMap.forEach(({ fieldId, measurements: gList }) => {
+      if (gList.length === 0) return;
 
-        const eCode = (f.estates?.code || '').toLowerCase();
-        const eName = (f.estates?.name || '').toLowerCase();
-        const estateMatches = !estateLower || eCode === estateLower || eName === estateLower || f.estate_id === group.estateStr;
+      const firstM = gList[0];
+      // Lookup field metadata from fields array
+      const matchedField = fields.find((f) => f.id === fieldId) || null;
+      const matchedDivision = matchedField
+        ? divisions.find((d) => d.id === matchedField.division_id)
+        : null;
+      const matchedEstate = matchedField
+        ? estates.find((e) => e.id === matchedField.estate_id)
+        : null;
 
-        const dCode = (f.divisions?.code || '').toLowerCase();
-        const dName = (f.divisions?.name || '').toLowerCase();
-        const divMatches = !divLower || dCode === divLower || dName === divLower || f.division_id === group.divStr;
+      const estateName = matchedEstate?.name || matchedField?.estates?.name || firstM.estate || '-';
+      const divisionName = matchedDivision?.name || matchedField?.divisions?.name || firstM.division || '-';
+      const fieldNo = matchedField?.field_code || firstM.fieldNo || '-';
 
-        return estateMatches && divMatches;
+      const extentVal = matchedField?.extent_ha != null
+        ? parseFloat(matchedField.extent_ha)
+        : (firstM.extent != null ? parseFloat(firstM.extent) : 0);
+      const extent = isNaN(extentVal) ? 0 : extentVal;
+
+      const yopRaw = matchedField?.yop;
+      const yop = (yopRaw !== null && yopRaw !== undefined && yopRaw !== '' && !isNaN(Number(yopRaw)))
+        ? Number(yopRaw)
+        : null;
+
+      // Latest measurement date
+      let maxDateObj = null;
+      gList.forEach((m) => {
+        if (m.date) {
+          const d = new Date(m.date);
+          if (!isNaN(d.getTime())) {
+            if (!maxDateObj || d > maxDateObj) {
+              maxDateObj = d;
+            }
+          }
+        }
       });
 
-      const fallbackMatch = !configMatch ? fields.find(f => (f.field_code || '').toLowerCase() === fieldLower) : null;
-      const matched = configMatch || fallbackMatch;
+      const censusDateStr = maxDateObj
+        ? maxDateObj.toISOString().slice(0, 10)
+        : '-';
 
-      list.push({
-        ...group,
+      const censusYear = maxDateObj
+        ? maxDateObj.getFullYear()
+        : new Date().getFullYear();
+
+      const upkeepYear = yop !== null ? String(censusYear - yop) : '';
+
+      // Count unique tree numbers for Total Plants
+      const uniqueTrees = new Set();
+      gList.forEach((m) => {
+        if (m.treeNo != null && m.treeNo !== '') {
+          uniqueTrees.add(m.treeNo);
+        }
+      });
+      const totalPlants = uniqueTrees.size > 0 ? uniqueTrees.size : gList.length;
+
+      // Girth distribution bands
+      let lessThan4 = 0;
+      let band4to7_9 = 0;
+      let band8to9_9 = 0;
+      let band10to11_9 = 0;
+      let band12to13_9 = 0;
+      let band14to15_9 = 0;
+      let band16to17_9 = 0;
+      let band18to19_9 = 0;
+      let over20 = 0;
+
+      gList.forEach((m) => {
+        const g = parseFloat(m.girth);
+        if (isNaN(g)) return;
+        if (g < 4) lessThan4++;
+        else if (g < 8) band4to7_9++;
+        else if (g < 10) band8to9_9++;
+        else if (g < 12) band10to11_9++;
+        else if (g < 14) band12to13_9++;
+        else if (g < 16) band14to15_9++;
+        else if (g < 18) band16to17_9++;
+        else if (g < 20) band18to19_9++;
+        else over20++;
+      });
+
+      const sph = extent > 0 ? Math.round(totalPlants / extent) : 0;
+      const above20Pct = totalPlants > 0 ? Math.round((over20 / totalPlants) * 100) : 0;
+
+      rows.push({
+        fieldId,
+        estateName,
+        divisionName,
+        fieldNo,
+        extent,
+        yop,
+        upkeepYear,
+        censusDate: censusDateStr,
+        lessThan4,
+        band4to7_9,
+        band8to9_9,
+        band10to11_9,
+        band12to13_9,
+        band14to15_9,
+        band16to17_9,
+        band18to19_9,
+        over20,
+        totalPlants,
+        sph,
+        above20Pct,
         targetField: {
-          fieldId: matched?.id || group.sampleFieldId || null,
-          fieldCode: matched?.field_code || group.fieldNoStr,
-          divisionName: matched?.divisions?.name || group.divStr,
-          estateName: matched?.estates?.name || group.estateStr,
-          extentHa: matched?.extent_ha || null
+          fieldId,
+          estateName,
+          divisionName,
+          fieldCode: fieldNo
         }
       });
     });
 
-    return list.sort((a, b) => (b.count - a.count));
-  }, [measurements, fields]);
+    // Order rows by Estate Name -> Division -> Field Number
+    rows.sort((a, b) => {
+      const eCmp = a.estateName.localeCompare(b.estateName);
+      if (eCmp !== 0) return eCmp;
+      const dCmp = a.divisionName.localeCompare(b.divisionName);
+      if (dCmp !== 0) return dCmp;
+      return a.fieldNo.localeCompare(b.fieldNo, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    // Totals row calculation
+    const totals = {
+      extent: rows.reduce((acc, r) => acc + r.extent, 0),
+      lessThan4: rows.reduce((acc, r) => acc + r.lessThan4, 0),
+      band4to7_9: rows.reduce((acc, r) => acc + r.band4to7_9, 0),
+      band8to9_9: rows.reduce((acc, r) => acc + r.band8to9_9, 0),
+      band10to11_9: rows.reduce((acc, r) => acc + r.band10to11_9, 0),
+      band12to13_9: rows.reduce((acc, r) => acc + r.band12to13_9, 0),
+      band14to15_9: rows.reduce((acc, r) => acc + r.band14to15_9, 0),
+      band16to17_9: rows.reduce((acc, r) => acc + r.band16to17_9, 0),
+      band18to19_9: rows.reduce((acc, r) => acc + r.band18to19_9, 0),
+      over20: rows.reduce((acc, r) => acc + r.over20, 0),
+      totalPlants: rows.reduce((acc, r) => acc + r.totalPlants, 0)
+    };
+
+    totals.sph = totals.extent > 0 ? Math.round(totals.totalPlants / totals.extent) : 0;
+    totals.above20Pct = totals.totalPlants > 0 ? Math.round((totals.over20 / totals.totalPlants) * 100) : 0;
+
+    return { rows, totals };
+  }, [measurements, fields, estates, divisions]);
+
+  const handleDownloadGirthCensusExcel = async () => {
+    if (!censusSummaryData || censusSummaryData.rows.length === 0) return;
+    setDownloadingExcel(true);
+    try {
+      const ExcelJSModule = await import('exceljs');
+      const ExcelJS = ExcelJSModule.default || ExcelJSModule;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Girth Census Summary');
+
+      const headers = [
+        'Estate Name', 'Division', 'Field No', 'Extent', 'YOP',
+        'Up keep Year (1st/2nd)', 'Date of Girth Census',
+        'Less than 4"', '4" - 7.9"', '8" - 9.9"', '10" - 11.9"',
+        '12" - 13.9"', '14" - 15.9"', '16" - 17.9"', '18" - 19.9"',
+        '20" or more', 'Total Plants', 'SPH', 'Above 20" Tree %'
+      ];
+
+      // Title row
+      const titleRow = worksheet.addRow(['Girth Census Summary Report']);
+      titleRow.font = { bold: true, size: 14, color: { argb: 'FF1F497D' } };
+      worksheet.addRow([]);
+
+      // Header row
+      const headerRow = worksheet.addRow(headers);
+      headerRow.height = 28;
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF8EA9DB' }
+        };
+        cell.font = { bold: true, color: { argb: 'FF000000' }, size: 10 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
+
+      // Data rows
+      censusSummaryData.rows.forEach((r) => {
+        const row = worksheet.addRow([
+          r.estateName,
+          r.divisionName,
+          r.fieldNo,
+          r.extent,
+          r.yop !== null ? r.yop : '-',
+          r.upkeepYear !== '' ? Number(r.upkeepYear) : '',
+          r.censusDate,
+          r.lessThan4,
+          r.band4to7_9,
+          r.band8to9_9,
+          r.band10to11_9,
+          r.band12to13_9,
+          r.band14to15_9,
+          r.band16to17_9,
+          r.band18to19_9,
+          r.over20,
+          r.totalPlants,
+          r.sph,
+          r.above20Pct / 100
+        ]);
+
+        row.height = 20;
+        row.eachCell((cell, colIndex) => {
+          cell.font = { size: 10 };
+          if (colIndex === 4) cell.numFmt = '0.00';
+          if (colIndex >= 8 && colIndex <= 18) cell.numFmt = '#,##0';
+          if (colIndex === 19) cell.numFmt = '0%';
+
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: colIndex <= 3 || colIndex === 7 ? 'left' : 'center'
+          };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+            left: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+            bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+            right: { style: 'thin', color: { argb: 'FFD9D9D9' } }
+          };
+        });
+      });
+
+      // Totals row (Bold text, cell borders, NO background fill)
+      const t = censusSummaryData.totals;
+      const totalRow = worksheet.addRow([
+        'Total',
+        '',
+        '',
+        t.extent,
+        '',
+        '',
+        '',
+        t.lessThan4,
+        t.band4to7_9,
+        t.band8to9_9,
+        t.band10to11_9,
+        t.band12to13_9,
+        t.band14to15_9,
+        t.band16to17_9,
+        t.band18to19_9,
+        t.over20,
+        t.totalPlants,
+        t.sph,
+        t.above20Pct / 100
+      ]);
+
+      totalRow.height = 22;
+      totalRow.eachCell((cell, colIndex) => {
+        cell.font = { bold: true, size: 10 };
+        if (colIndex === 4) cell.numFmt = '0.00';
+        if (colIndex >= 8 && colIndex <= 18) cell.numFmt = '#,##0';
+        if (colIndex === 19) cell.numFmt = '0%';
+
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: colIndex <= 3 || colIndex === 7 ? 'left' : 'center'
+        };
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'medium', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
+
+      // Column widths
+      worksheet.columns.forEach((col, i) => {
+        const titleLen = headers[i] ? headers[i].length : 10;
+        col.width = Math.max(titleLen + 3, 11);
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Girth_Census_Summary_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Excel export error:', err);
+      alert('Failed to generate Excel file: ' + err.message);
+    } finally {
+      setDownloadingExcel(false);
+    }
+  };
 
 
 
@@ -1524,51 +1789,95 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Field Record Matrix */}
-          {measurements.length > 0 && (
+          {/* Girth Census Summary */}
+          {censusSummaryData.rows.length > 0 && (
             <div className="glass-card" style={{ padding: '1rem', marginTop: '1rem', marginBottom: '1rem' }}>
-              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <BarChart3 size={16} /> Field Record Matrix ({matrixGroups.length} {matrixGroups.length === 1 ? 'Field' : 'Fields'})
-              </h4>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h4 style={{ margin: 0, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <BarChart3 size={16} /> Girth Census Summary ({censusSummaryData.rows.length} {censusSummaryData.rows.length === 1 ? 'Field' : 'Fields'})
+                </h4>
+                <button
+                  className="btn"
+                  onClick={handleDownloadGirthCensusExcel}
+                  disabled={downloadingExcel}
+                  style={{ width: 'auto', padding: '0.35rem 0.75rem', fontSize: '0.8rem', background: '#2e7d32', color: '#fff' }}
+                >
+                  {downloadingExcel ? <RefreshCw className="pulse" size={14} /> : <Download size={14} />}
+                  {downloadingExcel ? ' Preparing Excel...' : ' Download Summary Excel (.xlsx)'}
+                </button>
+              </div>
+
+              <div style={{ overflowX: 'auto', maxHeight: '600px' }}>
+                <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.8rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
-                      <th style={{ padding: '0.5rem' }}>Estate</th>
-                      <th style={{ padding: '0.5rem' }}>Division</th>
-                      <th style={{ padding: '0.5rem' }}>Field Code</th>
-                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Records</th>
-                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status / Action</th>
+                    <tr style={{ position: 'sticky', top: 0, zIndex: 2, background: '#8ea9db', color: '#000' }}>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'left', whiteSpace: 'nowrap' }}>Estate Name</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'left', whiteSpace: 'nowrap' }}>Division</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'left', whiteSpace: 'nowrap' }}>Field No</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>Extent</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'center', whiteSpace: 'nowrap' }}>YOP</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'center', whiteSpace: 'nowrap' }}>Up keep Year (1st/2nd)</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'center', whiteSpace: 'nowrap' }}>Date of Girth Census</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>Less than 4"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>4" - 7.9"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>8" - 9.9"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>10" - 11.9"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>12" - 13.9"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>14" - 15.9"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>16" - 17.9"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>18" - 19.9"</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>20" or more</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>Total Plants</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>SPH</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>Above 20" Tree %</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {matrixGroups.map((g, idx) => {
-                      const isSelected = selectedFieldForDrilldown?.fieldCode === g.targetField.fieldCode &&
-                        selectedFieldForDrilldown?.estateName === g.targetField.estateName;
-
-                      return (
-                        <tr
-                          key={idx}
-                          onClick={() => setSelectedFieldForDrilldown(g.targetField)}
-                          style={{
-                            borderBottom: '1px solid var(--border-color)',
-                            cursor: 'pointer',
-                            background: isSelected ? 'rgba(33, 150, 243, 0.15)' : undefined,
-                            transition: 'background 0.2s'
-                          }}
-                        >
-                          <td style={{ padding: '0.5rem' }}>{g.targetField.estateName}</td>
-                          <td style={{ padding: '0.5rem' }}>{g.targetField.divisionName}</td>
-                          <td style={{ padding: '0.5rem', fontWeight: 600 }}>{g.targetField.fieldCode}</td>
-                          <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 600 }}>{g.count}</td>
-                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                            <span style={{ color: 'var(--accent-primary)', fontSize: '0.78rem', fontWeight: 600 }}>
-                              View Details →
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {censusSummaryData.rows.map((r, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', whiteSpace: 'nowrap' }}>{r.estateName}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', whiteSpace: 'nowrap' }}>{r.divisionName}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.fieldNo}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.extent || '-'}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'center' }}>{r.yop !== null ? r.yop : '-'}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'center' }}>{r.upkeepYear || '-'}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'center', whiteSpace: 'nowrap' }}>{r.censusDate}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.lessThan4 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.band4to7_9 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.band8to9_9 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.band10to11_9 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.band12to13_9 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.band14to15_9 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.band16to17_9 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.band18to19_9 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.over20 || ''}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right', fontWeight: 600 }}>{r.totalPlants}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.sph}</td>
+                        <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right', fontWeight: 600 }}>{r.above20Pct}%</td>
+                      </tr>
+                    ))}
+                    {/* Totals row - Bold text & borders, NO fill */}
+                    {censusSummaryData.totals && (
+                      <tr style={{ fontWeight: 'bold', borderTop: '2px solid var(--text-main)', borderBottom: '2px solid var(--text-main)' }}>
+                        <td colSpan={3} style={{ padding: '0.5rem', textAlign: 'left' }}>Total</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.extent ? censusSummaryData.totals.extent.toFixed(2) : '0'}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>-</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>-</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>-</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.lessThan4 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.band4to7_9 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.band8to9_9 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.band10to11_9 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.band12to13_9 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.band14to15_9 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.band16to17_9 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.band18to19_9 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.over20 || ''}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.totalPlants}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.sph}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>{censusSummaryData.totals.above20Pct}%</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

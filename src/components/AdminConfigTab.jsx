@@ -336,7 +336,7 @@ export default function AdminConfigTab({ token }) {
 
           {selectedDivisionId && (
             <>
-              <button className="btn btn-secondary" style={{ width: 'auto', marginBottom: '1rem' }} onClick={() => setEditingField({ field_code: '', display_name: '', extent_ha: '', active: true })}>
+              <button className="btn btn-secondary" style={{ width: 'auto', marginBottom: '1rem' }} onClick={() => setEditingField({ field_code: '', display_name: '', extent_ha: '', yop: '', active: true })}>
                 <Plus size={16} /> Add Field
               </button>
 
@@ -346,6 +346,7 @@ export default function AdminConfigTab({ token }) {
                     <input required placeholder="Field Code" value={editingField.field_code} onChange={e => setEditingField({...editingField, field_code: e.target.value})} />
                     <input placeholder="Display Name" value={editingField.display_name} onChange={e => setEditingField({...editingField, display_name: e.target.value})} />
                     <input required type="number" step="0.01" min="0.01" placeholder="Extent (Ha)" value={editingField.extent_ha} onChange={e => setEditingField({...editingField, extent_ha: e.target.value})} />
+                    <input type="number" min="1900" max="2100" placeholder="YOP (Year of Planting)" value={editingField.yop ?? ''} onChange={e => setEditingField({...editingField, yop: e.target.value})} />
                     <ToggleActive active={editingField.active} onToggle={() => setEditingField({...editingField, active: !editingField.active})} />
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
@@ -356,13 +357,14 @@ export default function AdminConfigTab({ token }) {
               )}
 
               <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}><th>Code</th><th>Name</th><th>Extent (Ha)</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}><th>Code</th><th>Name</th><th>Extent (Ha)</th><th>YOP</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {fields.map(f => (
                     <tr key={f.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '0.4rem' }}>{f.field_code}</td>
                       <td style={{ padding: '0.4rem' }}>{f.display_name || '-'}</td>
                       <td style={{ padding: '0.4rem' }}>{f.extent_ha}</td>
+                      <td style={{ padding: '0.4rem' }}>{f.yop || '-'}</td>
                       <td style={{ padding: '0.4rem' }}>{f.active ? 'Active' : 'Inactive'}</td>
                       <td style={{ padding: '0.4rem' }}>
                         <button className="btn btn-secondary" style={{ width: 'auto', padding: '0.2rem', marginRight: '0.25rem' }} onClick={() => setEditingField({...f, original_extent_ha: f.extent_ha})}>

@@ -238,9 +238,12 @@ async function createField(db: any, body: any) {
     return respond({ error: 'extentHa must be positive' }, 400);
   }
 
+  const yopVal = body.yop !== undefined && body.yop !== null && body.yop !== '' ? parseInt(body.yop) : null;
+
   const { data, error } = await db.from('fields').insert({
     estate_id: estateId, division_id: divisionId,
-    field_code: fieldCode, extent_ha: extentHa, display_name: displayName || null
+    field_code: fieldCode, extent_ha: extentHa, display_name: displayName || null,
+    yop: yopVal
   }).select().single();
 
   if (error) {
@@ -255,6 +258,10 @@ async function updateField(db: any, body: any) {
   const { id, ...updates } = body;
   if (!id) return respond({ error: 'id required' }, 400);
   delete updates.action;
+
+  if (updates.yop !== undefined) {
+    updates.yop = updates.yop !== null && updates.yop !== '' ? parseInt(updates.yop) : null;
+  }
 
   // Warn if extent changes and measurements exist
   if (updates.extent_ha !== undefined) {
