@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle, Smartphone, QrCode, ShieldOff, Shield, Download, BarChart3, CheckCircle2, XCircle, Clock, User } from 'lucide-react';
 import QRCode from 'qrcode';
 import 'leaflet/dist/leaflet.css';
@@ -16,7 +16,9 @@ function isAbnormal(m) {
 
 import MeasurementMap from './MeasurementMap';
 import AdminConfigTab from './AdminConfigTab';
+import FieldDrilldown from './FieldDrilldown';
 import { Settings2 } from 'lucide-react';
+
 
 function AdminMap({ measurements, filter, mapRef }) {
   const [showAccuracy, setShowAccuracy] = useState(false);
@@ -958,7 +960,61 @@ export default function AdminPage() {
   
   const [measurements, setMeasurements] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
+  const [selectedFieldForDrilldown, setSelectedFieldForDrilldown] = useState(null);
   const mapRef = useRef(null);
+
+  const matrixGroups = useMemo(() => {
+    if (!measurements || measurements.length === 0) return [];
+    const map = new Map();
+    measurements.forEach(m => {
+      const estateStr = String(m.estate || '').trim();
+      const divStr = String(m.division || '').trim();
+      const fieldNoStr = String(m.fieldNo || '').trim();
+      const key = `${estateStr}|${divStr}|${fieldNoStr}`;
+      
+      if (!map.has(key)) {
+        map.set(key, { estateStr, divStr, fieldNoStr, count: 0 });
+      }
+      map.get(key).count++;
+    });
+
+    const list = [];
+    map.forEach(group => {
+      const estateLower = group.estateStr.toLowerCase();
+      const divLower = group.divStr.toLowerCase();
+      const fieldLower = group.fieldNoStr.toLowerCase();
+
+      const configMatch = fields.find(f => {
+        const fCodeLower = (f.field_code || '').toLowerCase();
+        if (fCodeLower !== fieldLower) return false;
+
+        const eCode = (f.estates?.code || '').toLowerCase();
+        const eName = (f.estates?.name || '').toLowerCase();
+        const estateMatches = eCode === estateLower || eName === estateLower;
+
+        const dCode = (f.divisions?.code || '').toLowerCase();
+        const dName = (f.divisions?.name || '').toLowerCase();
+        const divMatches = dCode === divLower || dName === divLower;
+
+        return estateMatches && divMatches;
+      });
+
+      list.push({
+        ...group,
+        configMatch: configMatch ? {
+          fieldId: configMatch.id,
+          fieldCode: configMatch.field_code,
+          divisionName: configMatch.divisions?.name || group.divStr,
+          estateName: configMatch.estates?.name || group.estateStr,
+          extentHa: configMatch.extent_ha
+        } : null
+      });
+    });
+
+    return list.sort((a, b) => (b.count - a.count));
+  }, [measurements, fields]);
+
+
 
   useEffect(() => {
     document.body.classList.add('admin-route');
@@ -1209,6 +1265,8 @@ export default function AdminPage() {
   const below = measurements.filter(m => getStatus(m).includes('not ready') || getStatus(m).includes('below')).length;
   const abnormal = measurements.filter(m => isAbnormal(m)).length;
 
+
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <BarChart3 size={16} /> },
     { id: 'measurements', label: 'Measurements', icon: <Database size={16} /> },
@@ -1366,6 +1424,67 @@ export default function AdminPage() {
             </div>
           </div>
 
+          {/* Field Record Matrix */}
+          {measurements.length > 0 && (
+            <div className="glass-card" style={{ padding: '1rem', marginTop: '1rem', marginBottom: '1rem' }}>
+              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <BarChart3 size={16} /> Field Record Matrix ({matrixGroups.length} {matrixGroups.length === 1 ? 'Field' : 'Fields'})
+              </h4>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.5rem' }}>Estate</th>
+                      <th style={{ padding: '0.5rem' }}>Division</th>
+                      <th style={{ padding: '0.5rem' }}>Field Code</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Records</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status / Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrixGroups.map((g, idx) => {
+                      const isClickable = Boolean(g.configMatch);
+                      const isSelected = selectedFieldForDrilldown?.fieldId === g.configMatch?.fieldId;
+
+                      return (
+                        <tr
+                          key={idx}
+                          onClick={() => {
+                            if (isClickable) {
+                              setSelectedFieldForDrilldown(g.configMatch);
+                            }
+                          }}
+                          style={{
+                            borderBottom: '1px solid var(--border-color)',
+                            cursor: isClickable ? 'pointer' : 'default',
+                            opacity: isClickable ? 1 : 0.6,
+                            background: isSelected ? 'rgba(33, 150, 243, 0.15)' : undefined
+                          }}
+                        >
+                          <td style={{ padding: '0.5rem' }}>{g.configMatch ? g.configMatch.estateName : g.estateStr}</td>
+                          <td style={{ padding: '0.5rem' }}>{g.configMatch ? g.configMatch.divisionName : g.divStr}</td>
+                          <td style={{ padding: '0.5rem', fontWeight: 600 }}>{g.configMatch ? g.configMatch.fieldCode : g.fieldNoStr}</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 600 }}>{g.count}</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                            {g.configMatch ? (
+                              <span style={{ color: 'var(--accent-primary)', fontSize: '0.78rem', fontWeight: 600 }}>
+                                View Details →
+                              </span>
+                            ) : (
+                              <span className="text-muted" style={{ fontSize: '0.75rem', fontStyle: 'italic' }}>
+                                Not linked to a configured field
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <AdminMap measurements={measurements} filter={statusFilter} mapRef={mapRef} />
         </>
       )}
@@ -1386,6 +1505,16 @@ export default function AdminPage() {
       {/* QR Codes Tab */}
       {activeTab === 'qrcodes' && (
         <QRCodesTab estates={estates} divisions={divisions} fields={fields} />
+      )}
+
+      {/* Detail Drilldown Panel */}
+      {selectedFieldForDrilldown && (
+        <FieldDrilldown
+          token={token}
+          field={selectedFieldForDrilldown}
+          onClose={() => setSelectedFieldForDrilldown(null)}
+          onAuthError={handleAuthError}
+        />
       )}
     </div>
   );

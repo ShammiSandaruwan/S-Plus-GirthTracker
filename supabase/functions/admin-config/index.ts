@@ -112,6 +112,11 @@ serve(async (req) => {
       case 'backfill_field_ids':
         return await backfillFieldIds(supabaseAdmin, body);
 
+      // === FIELD TREE REPORT ===
+      case 'field_tree_report':
+        return await getFieldTreeReport(supabaseAdmin, body);
+
+
       default:
         return respond({ error: 'Unknown action' }, 400);
     }
@@ -631,3 +636,119 @@ async function listPendingRequests(db: any) {
     })),
   });
 }
+
+// ======================== FIELD TREE REPORT ========================
+
+async function getFieldTreeReport(db: any, body: any) {
+  const { field_id } = body;
+  if (!field_id) {
+    return respond({ error: 'field_id is required' }, 400);
+  }
+
+  // Resolve this field's estate/division code+name so we can also catch legacy
+  // rows that haven't been backfilled with field_id yet.
+  const { data: fieldRow, error: fieldErr } = await db
+    .from('fields')
+    .select('field_code, estates(code, name), divisions(code, name)')
+    .eq('id', field_id)
+    .maybeSingle();
+
+  if (fieldErr) return respond({ error: fieldErr.message }, 500);
+  if (!fieldRow) return respond({ error: 'Field not found' }, 404);
+
+  const estateValues = Array.from(new Set([fieldRow.estates?.code, fieldRow.estates?.name].filter(Boolean)));
+  const divisionValues = Array.from(new Set([fieldRow.divisions?.code, fieldRow.divisions?.name].filter(Boolean)));
+
+  // Rows already linked via field_id
+  const { data: linkedRows, error: linkedErr } = await db
+    .from('census_measurements')
+    .select('tree_no, girth, tree_condition')
+    .eq('field_id', field_id);
+  if (linkedErr) return respond({ error: linkedErr.message }, 500);
+
+  // Legacy, not-yet-backfilled rows for the same field, matched by composite key.
+  // Mirrors backfillFieldIds: candidate limit 5000 + case-insensitive JS matching.
+  let legacyRows: any[] = [];
+  if (estateValues.length && divisionValues.length) {
+    const { data: candidateRows, error: legacyErr } = await db
+      .from('census_measurements')
+      .select('tree_no, girth, tree_condition, estate, division, field_no')
+      .is('field_id', null)
+      .limit(5000);
+
+    if (legacyErr) return respond({ error: legacyErr.message }, 500);
+
+    const estateSet = new Set(estateValues.map((v: string) => (v || '').toLowerCase()));
+    const divisionSet = new Set(divisionValues.map((v: string) => (v || '').toLowerCase()));
+    const fieldCodeLower = (fieldRow.field_code || '').toLowerCase();
+
+    legacyRows = (candidateRows || []).filter((r: any) =>
+      estateSet.has((r.estate || '').toLowerCase()) &&
+      divisionSet.has((r.division || '').toLowerCase()) &&
+      (r.field_no || '').toLowerCase() === fieldCodeLower
+    );
+  }
+
+  const rows = [...(linkedRows || []), ...legacyRows]
+    .sort((a, b) => (a.tree_no ?? 0) - (b.tree_no ?? 0));
+
+  // 1. Data Quality: Missing & Duplicates
+  const treeCounts: Record<number, number> = {};
+  rows.forEach(r => {
+    if (r.tree_no != null) treeCounts[r.tree_no] = (treeCounts[r.tree_no] || 0) + 1;
+  });
+
+  const uniqueTreeNumbers = Object.keys(treeCounts).map(Number).sort((a, b) => a - b);
+  const duplicates = Object.keys(treeCounts).filter(k => treeCounts[Number(k)] > 1).map(Number);
+
+  let min = null, max = null, missing: number[] = [];
+  if (uniqueTreeNumbers.length > 0) {
+    min = uniqueTreeNumbers[0];
+    max = uniqueTreeNumbers[uniqueTreeNumbers.length - 1];
+    const present = new Set(uniqueTreeNumbers);
+    for (let n = min; n <= max; n++) {
+      if (!present.has(n)) missing.push(n);
+    }
+  }
+
+  // 2. Tree Health — real domain values: healthy / runt / dead / damaged / animal_attack
+  const healthStats = { healthy: 0, runt: 0, dead: 0, damaged: 0 };
+  rows.forEach(r => {
+    const cond = r.tree_condition || 'healthy';
+    if (cond === 'runt') healthStats.runt++;
+    else if (cond === 'dead') healthStats.dead++;
+    else if (cond === 'damaged' || cond === 'animal_attack') healthStats.damaged++;
+    else healthStats.healthy++;
+  });
+
+  // 3. Girth Distribution (girth column is inches)
+  const girthDist = {
+    lessThan4: 0, band4to7_9: 0, band8to9_9: 0, band10to11_9: 0,
+    band12to13_9: 0, band14to15_9: 0, band16to17_9: 0, band18to19_9: 0, over20: 0
+  };
+  rows.forEach(r => {
+    const g = parseFloat(r.girth);
+    if (isNaN(g)) return;
+    if (g < 4) girthDist.lessThan4++;
+    else if (g < 8) girthDist.band4to7_9++;
+    else if (g < 10) girthDist.band8to9_9++;
+    else if (g < 12) girthDist.band10to11_9++;
+    else if (g < 14) girthDist.band12to13_9++;
+    else if (g < 16) girthDist.band14to15_9++;
+    else if (g < 18) girthDist.band16to17_9++;
+    else if (g < 20) girthDist.band18to19_9++;
+    else girthDist.over20++;
+  });
+
+  return respond({
+    success: true,
+    fieldId: field_id,
+    missingTreeNumbers: missing,
+    gapCount: missing.length,
+    duplicateTrees: duplicates,
+    duplicateCount: duplicates.length,
+    healthStats,
+    girthDist
+  });
+}
+
