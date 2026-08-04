@@ -640,53 +640,77 @@ async function listPendingRequests(db: any) {
 // ======================== FIELD TREE REPORT ========================
 
 async function getFieldTreeReport(db: any, body: any) {
-  const { field_id } = body;
-  if (!field_id) {
-    return respond({ error: 'field_id is required' }, 400);
+  const { field_id, estate, division, fieldNo, field_code } = body;
+  const targetFieldCode = fieldNo || field_code;
+
+  if (!field_id && (!estate || !division || !targetFieldCode)) {
+    return respond({ error: 'field_id or (estate, division, fieldNo) is required' }, 400);
   }
 
-  // Resolve this field's estate/division code+name so we can also catch legacy
-  // rows that haven't been backfilled with field_id yet.
-  const { data: fieldRow, error: fieldErr } = await db
-    .from('fields')
-    .select('field_code, estates(code, name), divisions(code, name)')
-    .eq('id', field_id)
-    .maybeSingle();
+  let fieldRow: any = null;
+  if (field_id) {
+    const { data: fData } = await db
+      .from('fields')
+      .select('id, field_code, extent_ha, estates(code, name), divisions(code, name)')
+      .eq('id', field_id)
+      .maybeSingle();
+    if (fData) fieldRow = fData;
+  }
 
-  if (fieldErr) return respond({ error: fieldErr.message }, 500);
-  if (!fieldRow) return respond({ error: 'Field not found' }, 404);
+  // Fallback: search configured field by code if fieldRow not resolved by ID
+  if (!fieldRow && targetFieldCode) {
+    const { data: candidates } = await db
+      .from('fields')
+      .select('id, field_code, extent_ha, estates(code, name), divisions(code, name)')
+      .ilike('field_code', targetFieldCode.trim());
 
-  const estateValues = Array.from(new Set([fieldRow.estates?.code, fieldRow.estates?.name].filter(Boolean)));
-  const divisionValues = Array.from(new Set([fieldRow.divisions?.code, fieldRow.divisions?.name].filter(Boolean)));
+    if (candidates && candidates.length > 0) {
+      const eLower = (estate || '').toLowerCase().trim();
+      const dLower = (division || '').toLowerCase().trim();
+      fieldRow = candidates.find((f: any) => {
+        const eCode = (f.estates?.code || '').toLowerCase();
+        const eName = (f.estates?.name || '').toLowerCase();
+        const dCode = (f.divisions?.code || '').toLowerCase();
+        const dName = (f.divisions?.name || '').toLowerCase();
+        const eMatch = !eLower || eCode === eLower || eName === eLower;
+        const dMatch = !dLower || dCode === dLower || dName === dLower;
+        return eMatch && dMatch;
+      }) || candidates[0];
+    }
+  }
 
-  // Rows already linked via field_id
-  const { data: linkedRows, error: linkedErr } = await db
-    .from('census_measurements')
-    .select('tree_no, girth, tree_condition')
-    .eq('field_id', field_id);
-  if (linkedErr) return respond({ error: linkedErr.message }, 500);
+  let linkedRows: any[] = [];
+  if (fieldRow?.id) {
+    const { data, error: linkedErr } = await db
+      .from('census_measurements')
+      .select('tree_no, girth, tree_condition')
+      .eq('field_id', fieldRow.id);
+    if (linkedErr) throw linkedErr;
+    if (data) linkedRows = data;
+  }
 
-  // Legacy, not-yet-backfilled rows for the same field, matched by composite key.
-  // Mirrors backfillFieldIds: candidate limit 5000 + case-insensitive JS matching.
   let legacyRows: any[] = [];
-  if (estateValues.length && divisionValues.length) {
+  const searchCode = (fieldRow?.field_code || targetFieldCode || '').toLowerCase().trim();
+  const searchEstate = (fieldRow?.estates?.name || fieldRow?.estates?.code || estate || '').toLowerCase().trim();
+  const searchDivision = (fieldRow?.divisions?.name || fieldRow?.divisions?.code || division || '').toLowerCase().trim();
+
+  if (searchCode) {
     const { data: candidateRows, error: legacyErr } = await db
       .from('census_measurements')
-      .select('tree_no, girth, tree_condition, estate, division, field_no')
-      .is('field_id', null)
+      .select('tree_no, girth, tree_condition, estate, division, field_no, field_id')
+      .ilike('field_no', searchCode)
       .limit(5000);
 
-    if (legacyErr) return respond({ error: legacyErr.message }, 500);
+    if (legacyErr) throw legacyErr;
 
-    const estateSet = new Set(estateValues.map((v: string) => (v || '').toLowerCase()));
-    const divisionSet = new Set(divisionValues.map((v: string) => (v || '').toLowerCase()));
-    const fieldCodeLower = (fieldRow.field_code || '').toLowerCase();
-
-    legacyRows = (candidateRows || []).filter((r: any) =>
-      estateSet.has((r.estate || '').toLowerCase()) &&
-      divisionSet.has((r.division || '').toLowerCase()) &&
-      (r.field_no || '').toLowerCase() === fieldCodeLower
-    );
+    legacyRows = (candidateRows || []).filter((r: any) => {
+      if (fieldRow?.id && r.field_id === fieldRow.id) return false; // Already included
+      const rEstate = (r.estate || '').toLowerCase().trim();
+      const rDiv = (r.division || '').toLowerCase().trim();
+      const eMatch = !searchEstate || rEstate === searchEstate || searchEstate.includes(rEstate) || rEstate.includes(searchEstate);
+      const dMatch = !searchDivision || rDiv === searchDivision || searchDivision.includes(rDiv) || rDiv.includes(searchDivision);
+      return eMatch && dMatch;
+    });
   }
 
   const rows = [...(linkedRows || []), ...legacyRows]

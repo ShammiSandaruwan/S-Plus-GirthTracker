@@ -1031,7 +1031,7 @@ export default function AdminPage() {
       const key = `${estateStr}|${divStr}|${fieldNoStr}`;
       
       if (!map.has(key)) {
-        map.set(key, { estateStr, divStr, fieldNoStr, count: 0 });
+        map.set(key, { estateStr, divStr, fieldNoStr, count: 0, sampleFieldId: m.fieldId || m.field_id || null });
       }
       map.get(key).count++;
     });
@@ -1048,24 +1048,27 @@ export default function AdminPage() {
 
         const eCode = (f.estates?.code || '').toLowerCase();
         const eName = (f.estates?.name || '').toLowerCase();
-        const estateMatches = eCode === estateLower || eName === estateLower;
+        const estateMatches = !estateLower || eCode === estateLower || eName === estateLower || f.estate_id === group.estateStr;
 
         const dCode = (f.divisions?.code || '').toLowerCase();
         const dName = (f.divisions?.name || '').toLowerCase();
-        const divMatches = dCode === divLower || dName === divLower;
+        const divMatches = !divLower || dCode === divLower || dName === divLower || f.division_id === group.divStr;
 
         return estateMatches && divMatches;
       });
 
+      const fallbackMatch = !configMatch ? fields.find(f => (f.field_code || '').toLowerCase() === fieldLower) : null;
+      const matched = configMatch || fallbackMatch;
+
       list.push({
         ...group,
-        configMatch: configMatch ? {
-          fieldId: configMatch.id,
-          fieldCode: configMatch.field_code,
-          divisionName: configMatch.divisions?.name || group.divStr,
-          estateName: configMatch.estates?.name || group.estateStr,
-          extentHa: configMatch.extent_ha
-        } : null
+        targetField: {
+          fieldId: matched?.id || group.sampleFieldId || null,
+          fieldCode: matched?.field_code || group.fieldNoStr,
+          divisionName: matched?.divisions?.name || group.divStr,
+          estateName: matched?.estates?.name || group.estateStr,
+          extentHa: matched?.extent_ha || null
+        }
       });
     });
 
@@ -1502,38 +1505,28 @@ export default function AdminPage() {
                   </thead>
                   <tbody>
                     {matrixGroups.map((g, idx) => {
-                      const isClickable = Boolean(g.configMatch);
-                      const isSelected = selectedFieldForDrilldown?.fieldId === g.configMatch?.fieldId;
+                      const isSelected = selectedFieldForDrilldown?.fieldCode === g.targetField.fieldCode &&
+                        selectedFieldForDrilldown?.estateName === g.targetField.estateName;
 
                       return (
                         <tr
                           key={idx}
-                          onClick={() => {
-                            if (isClickable) {
-                              setSelectedFieldForDrilldown(g.configMatch);
-                            }
-                          }}
+                          onClick={() => setSelectedFieldForDrilldown(g.targetField)}
                           style={{
                             borderBottom: '1px solid var(--border-color)',
-                            cursor: isClickable ? 'pointer' : 'default',
-                            opacity: isClickable ? 1 : 0.6,
-                            background: isSelected ? 'rgba(33, 150, 243, 0.15)' : undefined
+                            cursor: 'pointer',
+                            background: isSelected ? 'rgba(33, 150, 243, 0.15)' : undefined,
+                            transition: 'background 0.2s'
                           }}
                         >
-                          <td style={{ padding: '0.5rem' }}>{g.configMatch ? g.configMatch.estateName : g.estateStr}</td>
-                          <td style={{ padding: '0.5rem' }}>{g.configMatch ? g.configMatch.divisionName : g.divStr}</td>
-                          <td style={{ padding: '0.5rem', fontWeight: 600 }}>{g.configMatch ? g.configMatch.fieldCode : g.fieldNoStr}</td>
+                          <td style={{ padding: '0.5rem' }}>{g.targetField.estateName}</td>
+                          <td style={{ padding: '0.5rem' }}>{g.targetField.divisionName}</td>
+                          <td style={{ padding: '0.5rem', fontWeight: 600 }}>{g.targetField.fieldCode}</td>
                           <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 600 }}>{g.count}</td>
                           <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                            {g.configMatch ? (
-                              <span style={{ color: 'var(--accent-primary)', fontSize: '0.78rem', fontWeight: 600 }}>
-                                View Details →
-                              </span>
-                            ) : (
-                              <span className="text-muted" style={{ fontSize: '0.75rem', fontStyle: 'italic' }}>
-                                Not linked to a configured field
-                              </span>
-                            )}
+                            <span style={{ color: 'var(--accent-primary)', fontSize: '0.78rem', fontWeight: 600 }}>
+                              View Details →
+                            </span>
                           </td>
                         </tr>
                       );
@@ -1571,6 +1564,7 @@ export default function AdminPage() {
         <FieldDrilldown
           token={token}
           field={selectedFieldForDrilldown}
+          measurements={measurements}
           onClose={() => setSelectedFieldForDrilldown(null)}
           onAuthError={handleAuthError}
         />

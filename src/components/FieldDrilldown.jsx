@@ -1,39 +1,124 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { BarChart3, X, RefreshCw, AlertTriangle, Activity, Database, CheckCircle2 } from 'lucide-react';
 
-export default function FieldDrilldown({ token, field, onClose, onAuthError }) {
+export default function FieldDrilldown({ token, field, measurements, onClose, onAuthError }) {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const clientFallback = useMemo(() => {
+    if (!field || !measurements || measurements.length === 0) return null;
+    const fCode = (field.fieldCode || '').toLowerCase().trim();
+    const eName = (field.estateName || '').toLowerCase().trim();
+    const dName = (field.divisionName || '').toLowerCase().trim();
+
+    const matching = measurements.filter(m => {
+      const mField = (m.fieldNo || '').toLowerCase().trim();
+      const mEstate = (m.estate || '').toLowerCase().trim();
+      const mDiv = (m.division || '').toLowerCase().trim();
+      const fMatch = !fCode || mField === fCode;
+      const eMatch = !eName || mEstate === eName || eName.includes(mEstate) || mEstate.includes(eName);
+      const dMatch = !dName || mDiv === dName || dName.includes(mDiv) || mDiv.includes(dName);
+      return fMatch && eMatch && dMatch;
+    });
+
+    if (matching.length === 0) return null;
+
+    const rows = [...matching].sort((a, b) => (a.treeNo ?? 0) - (b.treeNo ?? 0));
+    const treeCounts = {};
+    rows.forEach(r => {
+      if (r.treeNo != null) treeCounts[r.treeNo] = (treeCounts[r.treeNo] || 0) + 1;
+    });
+
+    const uniqueTreeNumbers = Object.keys(treeCounts).map(Number).sort((a, b) => a - b);
+    const duplicates = Object.keys(treeCounts).filter(k => treeCounts[Number(k)] > 1).map(Number);
+
+    const missing = [];
+    if (uniqueTreeNumbers.length > 0) {
+      const min = uniqueTreeNumbers[0];
+      const max = uniqueTreeNumbers[uniqueTreeNumbers.length - 1];
+      const present = new Set(uniqueTreeNumbers);
+      for (let n = min; n <= max; n++) {
+        if (!present.has(n)) missing.push(n);
+      }
+    }
+
+    const healthStats = { healthy: 0, runt: 0, dead: 0, damaged: 0 };
+    rows.forEach(r => {
+      const cond = r.treeCondition || 'healthy';
+      if (cond === 'runt') healthStats.runt++;
+      else if (cond === 'dead') healthStats.dead++;
+      else if (cond === 'damaged' || cond === 'animal_attack') healthStats.damaged++;
+      else healthStats.healthy++;
+    });
+
+    const girthDist = {
+      lessThan4: 0, band4to7_9: 0, band8to9_9: 0, band10to11_9: 0,
+      band12to13_9: 0, band14to15_9: 0, band16to17_9: 0, band18to19_9: 0, over20: 0
+    };
+    rows.forEach(r => {
+      const g = parseFloat(r.girth);
+      if (isNaN(g)) return;
+      if (g < 4) girthDist.lessThan4++;
+      else if (g < 8) girthDist.band4to7_9++;
+      else if (g < 10) girthDist.band8to9_9++;
+      else if (g < 12) girthDist.band10to11_9++;
+      else if (g < 14) girthDist.band12to13_9++;
+      else if (g < 16) girthDist.band14to15_9++;
+      else if (g < 18) girthDist.band16to17_9++;
+      else if (g < 20) girthDist.band18to19_9++;
+      else girthDist.over20++;
+    });
+
+    return {
+      missingTreeNumbers: missing,
+      gapCount: missing.length,
+      duplicateTrees: duplicates,
+      duplicateCount: duplicates.length,
+      healthStats,
+      girthDist,
+      totalRecords: matching.length
+    };
+  }, [field, measurements]);
+
   const loadReport = useCallback(async () => {
-    if (!field?.fieldId || !token) return;
+    if (!field || !token) return;
     setLoading(true);
     setError('');
     try {
       const { adminCRUD } = await import('../services/supabaseSync');
-      const data = await adminCRUD(token, 'field_tree_report', { field_id: field.fieldId });
+      const data = await adminCRUD(token, 'field_tree_report', {
+        field_id: field.fieldId,
+        estate: field.estateName,
+        division: field.divisionName,
+        fieldNo: field.fieldCode
+      });
       setReportData(data);
     } catch (err) {
       if (err.message && err.message.includes('Invalid or expired')) {
         onAuthError(err.message);
-      } else {
-        setError("Couldn't load field details, try again");
+      } else if (!clientFallback) {
+        setError("Couldn't load field details from server.");
       }
     } finally {
       setLoading(false);
     }
-  }, [field, token, onAuthError]);
+  }, [field, token, onAuthError, clientFallback]);
 
   useEffect(() => {
     let ignore = false;
     const fetchReport = async () => {
-      if (!field?.fieldId || !token) return;
+      if (!field || !token) return;
       setLoading(true);
       setError('');
       try {
         const { adminCRUD } = await import('../services/supabaseSync');
-        const data = await adminCRUD(token, 'field_tree_report', { field_id: field.fieldId });
+        const data = await adminCRUD(token, 'field_tree_report', {
+          field_id: field.fieldId,
+          estate: field.estateName,
+          division: field.divisionName,
+          fieldNo: field.fieldCode
+        });
         if (!ignore) {
           setReportData(data);
         }
@@ -41,8 +126,8 @@ export default function FieldDrilldown({ token, field, onClose, onAuthError }) {
         if (!ignore) {
           if (err.message && err.message.includes('Invalid or expired')) {
             onAuthError(err.message);
-          } else {
-            setError("Couldn't load field details, try again");
+          } else if (!clientFallback) {
+            setError("Couldn't load field details from server.");
           }
         }
       } finally {
@@ -55,9 +140,11 @@ export default function FieldDrilldown({ token, field, onClose, onAuthError }) {
     return () => {
       ignore = true;
     };
-  }, [field, token, onAuthError]);
+  }, [field, token, onAuthError, clientFallback]);
 
   if (!field) return null;
+
+  const activeData = reportData || clientFallback;
 
   const renderArrayLimit = (arr) => {
     if (!arr || arr.length === 0) return <span style={{ color: 'var(--text-muted)' }}>None</span>;
@@ -87,169 +174,193 @@ export default function FieldDrilldown({ token, field, onClose, onAuthError }) {
 
   return (
     <div
-      className="glass-card field-drilldown-panel"
+      className="modal-backdrop"
+      onClick={onClose}
       style={{
         position: 'fixed',
-        top: 0,
-        right: 0,
-        height: '100vh',
-        width: 'min(420px, 100vw)',
-        overflowY: 'auto',
-        zIndex: 1000,
-        padding: '1.5rem',
-        boxShadow: '-4px 0 24px rgba(0,0,0,0.25)',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backdropFilter: 'blur(6px)',
+        zIndex: 9999,
         display: 'flex',
-        flexDirection: 'column',
-        gap: '1rem',
-        borderRadius: 0,
-        borderLeft: '1px solid var(--border-color)',
-        background: 'var(--bg-card, rgba(20, 24, 33, 0.95))',
-        backdropFilter: 'blur(12px)'
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem'
       }}
     >
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <BarChart3 size={20} color="var(--accent-primary)" /> Field Detail Drilldown
-          </h3>
-          <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-            {field.estateName || '-'} / {field.divisionName || '-'} — <strong style={{ color: 'var(--text-color)' }}>{field.fieldCode}</strong>
-          </div>
-        </div>
-        <button
-          className="btn-icon"
-          onClick={onClose}
-          title="Close Panel"
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            padding: '0.2rem',
-            display: 'flex',
-            alignItems: 'center'
-          }}
-        >
-          <X size={20} />
-        </button>
-      </div>
-
-      {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--accent-primary)', padding: '0.5rem 0' }}>
-          <RefreshCw className="pulse" size={16} /> Loading field details...
-        </div>
-      )}
-
-      {error ? (
-        <div style={{ padding: '1rem', background: 'rgba(244, 67, 54, 0.1)', borderRadius: '8px', border: '1px solid rgba(244, 67, 54, 0.3)' }}>
-          <div style={{ color: '#f44336', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.75rem' }}>
-            <AlertTriangle size={16} /> {error}
+      <div
+        className="glass-card field-drilldown-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: '540px',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          padding: '1.5rem',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem',
+          borderRadius: '12px',
+          border: '1px solid var(--border-color)',
+          background: 'var(--bg-card, rgba(20, 24, 33, 0.98))',
+          animation: 'fadeIn 0.2s ease-out'
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <BarChart3 size={20} color="var(--accent-primary)" /> Field Detail Drilldown
+            </h3>
+            <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+              {field.estateName || '-'} / {field.divisionName || '-'} — <strong style={{ color: 'var(--text-color)' }}>Field {field.fieldCode}</strong>
+            </div>
           </div>
           <button
-            className="btn btn-secondary"
-            onClick={loadReport}
-            style={{ width: 'auto', padding: '0.3rem 0.75rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+            className="btn-icon"
+            onClick={onClose}
+            title="Close Modal"
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: 'none',
+              borderRadius: '50%',
+              color: 'var(--text-color)',
+              cursor: 'pointer',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.2s'
+            }}
           >
-            <RefreshCw size={14} /> Retry
+            <X size={18} />
           </button>
         </div>
-      ) : reportData ? (
-        <>
-          {/* Section 1: Field Information */}
-          <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-            <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Database size={14} /> Field Information
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', fontSize: '0.85rem' }}>
-              <div>
-                <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Estate</span>
-                <strong>{field.estateName || '-'}</strong>
-              </div>
-              <div>
-                <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Division</span>
-                <strong>{field.divisionName || '-'}</strong>
-              </div>
-              <div>
-                <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Field Code</span>
-                <strong>{field.fieldCode || '-'}</strong>
-              </div>
-              <div>
-                <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Extent</span>
-                <strong>{field.extentHa ? `${field.extentHa} Ha` : '-'}</strong>
-              </div>
-            </div>
-          </div>
 
-          {/* Section 2: Data Quality */}
-          <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-            <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <CheckCircle2 size={14} /> Data Quality
-            </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem' }}>
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>
-                  Missing Tree Numbers ({reportData.gapCount || 0}):
-                </div>
-                <div style={{ background: 'var(--bg-secondary, rgba(0,0,0,0.2))', padding: '0.5rem', borderRadius: '6px', maxHeight: '90px', overflowY: 'auto', wordBreak: 'break-word' }}>
-                  {renderArrayLimit(reportData.missingTreeNumbers)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>
-                  Duplicate Trees ({reportData.duplicateCount || 0}):
-                </div>
-                <div style={{ background: 'var(--bg-secondary, rgba(0,0,0,0.2))', padding: '0.5rem', borderRadius: '6px', maxHeight: '90px', overflowY: 'auto', wordBreak: 'break-word' }}>
-                  {renderArrayLimit(reportData.duplicateTrees)}
-                </div>
-              </div>
-            </div>
+        {loading && !activeData && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--accent-primary)', padding: '2rem 0' }}>
+            <RefreshCw className="pulse" size={20} /> Loading field details...
           </div>
+        )}
 
-          {/* Section 3: Tree Health */}
-          <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-            <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Activity size={14} /> Tree Health
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-              <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.2)', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#4caf50' }}>{reportData.healthStats?.healthy || 0}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Healthy</div>
-              </div>
-              <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255, 193, 7, 0.15)', border: '1px solid rgba(255, 193, 7, 0.3)', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ffc107' }}>{reportData.healthStats?.runt || 0}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Runt</div>
-              </div>
-              <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ef4444' }}>{reportData.healthStats?.dead || 0}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Dead</div>
-              </div>
-              <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(236, 72, 153, 0.15)', border: '1px solid rgba(236, 72, 153, 0.3)', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ec4899' }}>{reportData.healthStats?.damaged || 0}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Damaged</div>
-              </div>
+        {error && !activeData ? (
+          <div style={{ padding: '1rem', background: 'rgba(244, 67, 54, 0.1)', borderRadius: '8px', border: '1px solid rgba(244, 67, 54, 0.3)' }}>
+            <div style={{ color: '#f44336', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.75rem' }}>
+              <AlertTriangle size={16} /> {error}
             </div>
+            <button
+              className="btn btn-secondary"
+              onClick={loadReport}
+              style={{ width: 'auto', padding: '0.3rem 0.75rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <RefreshCw size={14} /> Retry
+            </button>
           </div>
-
-          {/* Section 4: Girth Distribution */}
-          <div>
-            <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <BarChart3 size={14} /> Girth Distribution (Inches)
-            </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              {girthBands.map(b => {
-                const count = reportData.girthDist?.[b.key] || 0;
-                return (
-                  <div key={b.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '0.2rem 0.4rem', borderRadius: '4px', background: 'var(--bg-secondary, rgba(0,0,0,0.15))' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>{b.label}</span>
-                    <strong style={{ fontWeight: 600 }}>{count}</strong>
+        ) : activeData ? (
+          <>
+            {/* Section 1: Field Information */}
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+              <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Database size={14} /> Field Information
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem', fontSize: '0.85rem' }}>
+                <div>
+                  <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Estate</span>
+                  <strong>{field.estateName || '-'}</strong>
+                </div>
+                <div>
+                  <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Division</span>
+                  <strong>{field.divisionName || '-'}</strong>
+                </div>
+                <div>
+                  <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Field Code</span>
+                  <strong>{field.fieldCode || '-'}</strong>
+                </div>
+                <div>
+                  <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Extent</span>
+                  <strong>{field.extentHa ? `${field.extentHa} Ha` : '-'}</strong>
+                </div>
+                {activeData.totalRecords != null && (
+                  <div>
+                    <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>Total Records</span>
+                    <strong style={{ color: 'var(--accent-primary)' }}>{activeData.totalRecords} trees</strong>
                   </div>
-                );
-              })}
+                )}
+              </div>
             </div>
-          </div>
-        </>
-      ) : null}
+
+            {/* Section 2: Data Quality */}
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+              <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <CheckCircle2 size={14} /> Data Quality
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem' }}>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>
+                    Missing Tree Numbers ({activeData.gapCount || 0}):
+                  </div>
+                  <div style={{ background: 'var(--bg-secondary, rgba(0,0,0,0.2))', padding: '0.5rem', borderRadius: '6px', maxHeight: '90px', overflowY: 'auto', wordBreak: 'break-word' }}>
+                    {renderArrayLimit(activeData.missingTreeNumbers)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>
+                    Duplicate Trees ({activeData.duplicateCount || 0}):
+                  </div>
+                  <div style={{ background: 'var(--bg-secondary, rgba(0,0,0,0.2))', padding: '0.5rem', borderRadius: '6px', maxHeight: '90px', overflowY: 'auto', wordBreak: 'break-word' }}>
+                    {renderArrayLimit(activeData.duplicateTrees)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Tree Health */}
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+              <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Activity size={14} /> Tree Health
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.2)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#4caf50' }}>{activeData.healthStats?.healthy || 0}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Healthy</div>
+                </div>
+                <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255, 193, 7, 0.15)', border: '1px solid rgba(255, 193, 7, 0.3)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ffc107' }}>{activeData.healthStats?.runt || 0}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Runt</div>
+                </div>
+                <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ef4444' }}>{activeData.healthStats?.dead || 0}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Dead</div>
+                </div>
+                <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(236, 72, 153, 0.15)', border: '1px solid rgba(236, 72, 153, 0.3)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ec4899' }}>{activeData.healthStats?.damaged || 0}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Damaged</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: Girth Distribution */}
+            <div>
+              <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <BarChart3 size={14} /> Girth Distribution (Inches)
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {girthBands.map(b => {
+                  const count = activeData.girthDist?.[b.key] || 0;
+                  return (
+                    <div key={b.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '0.2rem 0.4rem', borderRadius: '4px', background: 'var(--bg-secondary, rgba(0,0,0,0.15))' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>{b.label}</span>
+                      <strong style={{ fontWeight: 600 }}>{count}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -51,6 +51,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
+    }
+
     // Allow fetching across all estates if no specific estate or estate_id is provided
     // If estate_id is provided, use it. Else fallback to text.
     let query = supabaseAdmin
@@ -119,6 +121,7 @@ serve(async (req) => {
     const mappedMeasurements = (measurements || []).map(r => ({
       id: r.local_dexie_id,
       measurementId: r.id,
+      fieldId: r.field_id,
       estate: r.estate,
       division: r.division,
       fieldNo: r.field_no,
