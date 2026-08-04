@@ -83,6 +83,8 @@ serve(async (req) => {
         return await createField(supabaseAdmin, body);
       case 'update_field':
         return await updateField(supabaseAdmin, body);
+      case 'delete_field':
+        return await deleteField(supabaseAdmin, body);
 
       // === SHEET MAPPINGS ===
       case 'list_sheet_mappings':
@@ -97,6 +99,8 @@ serve(async (req) => {
         return await listDevices(supabaseAdmin);
       case 'revoke_device':
         return await revokeDevice(supabaseAdmin, body);
+      case 'delete_device':
+        return await deleteDevice(supabaseAdmin, body);
 
       // === SUMMARY ===
       case 'get_summary':
@@ -271,6 +275,27 @@ async function updateField(db: any, body: any) {
   return respond({ success: true, field: data });
 }
 
+async function deleteField(db: any, body: any) {
+  const { id } = body;
+  if (!id) return respond({ error: 'id required' }, 400);
+
+  const { count } = await db.from('census_measurements')
+    .select('id', { count: 'exact', head: true })
+    .eq('field_id', id);
+
+  if (count && count > 0 && !body.confirmDelete) {
+    return respond({
+      warning: true,
+      message: `This field has ${count} associated measurements. Are you sure you want to delete it?`,
+      measurementCount: count,
+    });
+  }
+
+  const { error } = await db.from('fields').delete().eq('id', id);
+  if (error) throw error;
+  return respond({ success: true, message: 'Field deleted successfully' });
+}
+
 // ======================== SHEET MAPPINGS ========================
 
 async function listSheetMappings(db: any) {
@@ -370,6 +395,25 @@ async function revokeDevice(db: any, body: any) {
   });
 
   return respond({ success: true, message: 'Device revoked.' });
+}
+
+async function deleteDevice(db: any, body: any) {
+  const { deviceIdHash } = body;
+  if (!deviceIdHash) return respond({ error: 'deviceIdHash required' }, 400);
+
+  const { error } = await db.from('approved_devices')
+    .delete()
+    .eq('device_id_hash', deviceIdHash);
+  if (error) throw error;
+
+  await db.from('approval_events').insert({
+    event_type: 'delete',
+    device_id_hash: deviceIdHash,
+    performed_by: 'mod_admin',
+    event_data: { deleted_at: new Date().toISOString() },
+  });
+
+  return respond({ success: true, message: 'Device deleted.' });
 }
 
 // ======================== DEVICE MIGRATION (Idempotent) ========================

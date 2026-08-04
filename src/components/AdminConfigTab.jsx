@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, RefreshCw, Save, CheckCircle, XCircle, Plus, Edit2 } from 'lucide-react';
+import { Database, RefreshCw, Save, CheckCircle, XCircle, Plus, Edit2, Trash2 } from 'lucide-react';
 import { adminCRUD } from '../services/supabaseSync';
 
 function ToggleActive({ active, onToggle }) {
@@ -150,6 +150,24 @@ export default function AdminConfigTab({ token }) {
       } else setMessage(res.error);
     } catch (err) { setMessage(err.message); }
     finally { setLoading(false); }
+  };
+
+  const handleDeleteField = async (fieldId) => {
+    if (!window.confirm('Are you sure you want to delete this field? This action cannot be undone.')) return;
+    setLoading(true);
+    try {
+      const res = await adminCRUD(token, 'delete_field', { id: fieldId, confirmDelete: true });
+      if (res.success) {
+        setMessage('Field deleted successfully.');
+        loadFields(selectedDivisionId);
+      } else {
+        setMessage(res.error || 'Failed to delete field.');
+      }
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // --- MAPPINGS ---
@@ -347,8 +365,11 @@ export default function AdminConfigTab({ token }) {
                       <td style={{ padding: '0.4rem' }}>{f.extent_ha}</td>
                       <td style={{ padding: '0.4rem' }}>{f.active ? 'Active' : 'Inactive'}</td>
                       <td style={{ padding: '0.4rem' }}>
-                        <button className="btn btn-secondary" style={{ width: 'auto', padding: '0.2rem' }} onClick={() => setEditingField({...f, original_extent_ha: f.extent_ha})}>
+                        <button className="btn btn-secondary" style={{ width: 'auto', padding: '0.2rem', marginRight: '0.25rem' }} onClick={() => setEditingField({...f, original_extent_ha: f.extent_ha})}>
                           <Edit2 size={14} />
+                        </button>
+                        <button className="btn btn-danger" style={{ width: 'auto', padding: '0.2rem' }} onClick={() => handleDeleteField(f.id)}>
+                          <Trash2 size={14} />
                         </button>
                       </td>
                     </tr>

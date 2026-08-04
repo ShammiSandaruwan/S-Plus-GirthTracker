@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle, Smartphone, QrCode, ShieldOff, Shield, Download, BarChart3, CheckCircle2, XCircle, Clock, User } from 'lucide-react';
+import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle, Smartphone, QrCode, ShieldOff, Shield, Download, BarChart3, CheckCircle2, XCircle, Clock, User, Trash2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import 'leaflet/dist/leaflet.css';
 
@@ -551,6 +551,7 @@ function DevicesTab({ token, onAuthError }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [revoking, setRevoking] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const autoRefreshRef = useRef(null);
@@ -611,6 +612,24 @@ function DevicesTab({ token, onAuthError }) {
       setError('Network error revoking device.');
     } finally {
       setRevoking(null);
+    }
+  };
+
+  const deleteDevice = async (deviceIdHash) => {
+    if (!confirm('Are you sure you want to permanently delete this revoked device entry?')) return;
+    setDeleting(deviceIdHash);
+    try {
+      const { adminCRUD } = await import('../services/supabaseSync');
+      const data = await adminCRUD(token, 'delete_device', { deviceIdHash });
+      if (data.success) {
+        loadDevices();
+      } else {
+        setError(data.error || 'Failed to delete device.');
+      }
+    } catch {
+      setError('Network error deleting device.');
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -802,12 +821,31 @@ function DevicesTab({ token, onAuthError }) {
           </h3>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+                  <th style={{ padding: '0.4rem' }}>Operator</th>
+                  <th style={{ padding: '0.4rem' }}>Estate</th>
+                  <th style={{ padding: '0.4rem' }}>Status</th>
+                  <th style={{ padding: '0.4rem', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
               <tbody>
                 {revokedDevices.map((d, i) => (
                   <tr key={d.deviceIdHash || i} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '0.4rem' }}>{d.operatorName || '-'}</td>
                     <td style={{ padding: '0.4rem' }}>{d.estate || '-'}</td>
                     <td style={{ padding: '0.4rem', color: '#f44336' }}>Revoked</td>
+                    <td style={{ padding: '0.4rem', textAlign: 'center' }}>
+                      <button
+                        className="btn btn-danger"
+                        onClick={() => deleteDevice(d.deviceIdHash)}
+                        disabled={deleting === d.deviceIdHash}
+                        style={{ width: 'auto', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                      >
+                        {deleting === d.deviceIdHash ? <RefreshCw className="pulse" size={12} /> : <Trash2 size={12} />}
+                        {deleting === d.deviceIdHash ? '' : ' Delete'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
