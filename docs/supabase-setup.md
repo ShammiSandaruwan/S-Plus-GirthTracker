@@ -27,6 +27,7 @@ supabase functions deploy undo-measurement --no-verify-jwt
 supabase functions deploy export-field --no-verify-jwt
 supabase functions deploy admin-auth --no-verify-jwt
 supabase functions deploy admin-fetch --no-verify-jwt
+supabase functions deploy device-heartbeat --no-verify-jwt
 ```
 
 ## 3. Environment Secrets

@@ -209,3 +209,20 @@ export async function adminApproveDevice(adminToken, requestId, action) {
   if (!response.ok) throw new Error(result.error || result.message || 'Approval action failed');
   return result;
 }
+
+export async function deviceHeartbeat(deviceId, deviceToken) {
+  try {
+    const url = `${SUPABASE_FUNCTIONS_URL}/device-heartbeat`;
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-device-id': deviceId,
+        'x-device-token': deviceToken,
+      },
+      body: JSON.stringify({ t: Date.now() })
+    });
+  } catch {
+    // Heartbeat failures are non-critical — silently ignore
+  }
+}

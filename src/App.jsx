@@ -9,7 +9,7 @@ import FieldInsightsModal from './components/FieldInsightsModal';
 import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
 import { girthToCm, getRecommendation } from './services/recommendation';
 import { checkAbnormal } from './services/analytics';
-import { syncToSupabase, undoFromSupabase, checkDuplicateInDexie } from './services/supabaseSync';
+import { syncToSupabase, undoFromSupabase, checkDuplicateInDexie, deviceHeartbeat } from './services/supabaseSync';
 import { SUPABASE_URL } from './services/supabaseClient';
 import AdminPage from './components/AdminPage';
 import SetPassword from './components/SetPassword';
@@ -481,6 +481,23 @@ function getFriendlySyncErrorMessage(errorObj) {
     }, 30000);
     return () => clearInterval(interval);
   }, [isOnline, pendingCountForSync, syncPending]);
+
+  // Device heartbeat — keeps last_seen_at fresh for admin online status
+  useEffect(() => {
+    if (!isSetupComplete || !isOnline) return;
+    const currentSettings = settingsRef.current;
+    if (!currentSettings.deviceId || !currentSettings.deviceToken) return;
+
+    // Send heartbeat immediately on setup, then every 2 minutes
+    deviceHeartbeat(currentSettings.deviceId, currentSettings.deviceToken);
+    const hbInterval = setInterval(() => {
+      const s = settingsRef.current;
+      if (navigator.onLine && s.deviceId && s.deviceToken) {
+        deviceHeartbeat(s.deviceId, s.deviceToken);
+      }
+    }, 120000);
+    return () => clearInterval(hbInterval);
+  }, [isSetupComplete, isOnline]);
 
   const saveMeasurement = useCallback(async (caliperReading, conditionOverride = null, noteOverride = null) => {
     const activeCondition = conditionOverride || treeCondition;

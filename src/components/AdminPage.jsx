@@ -440,11 +440,60 @@ function PendingRequestsSection({ token, onAuthError }) {
 // ----------------------------------------------------
 // Device Management Tab
 // ----------------------------------------------------
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+function getDeviceStatus(lastSeenAt) {
+  if (!lastSeenAt) return 'unknown';
+  const diff = Date.now() - new Date(lastSeenAt).getTime();
+  return diff <= ONLINE_THRESHOLD_MS ? 'online' : 'offline';
+}
+
+function StatusBadge({ status }) {
+  const config = {
+    online:  { color: '#4caf50', bg: 'rgba(76, 175, 80, 0.15)',  label: 'Online' },
+    offline: { color: '#9e9e9e', bg: 'rgba(158, 158, 158, 0.12)', label: 'Offline' },
+    unknown: { color: '#ff9800', bg: 'rgba(255, 152, 0, 0.15)',  label: 'Unknown' },
+  };
+  const c = config[status] || config.unknown;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+      padding: '0.15rem 0.5rem', borderRadius: '999px',
+      background: c.bg, color: c.color, fontSize: '0.75rem', fontWeight: 600,
+      whiteSpace: 'nowrap',
+    }}>
+      <span style={{
+        width: 8, height: 8, borderRadius: '50%', background: c.color,
+        display: 'inline-block',
+        boxShadow: status === 'online' ? `0 0 6px ${c.color}` : 'none',
+        animation: status === 'online' ? 'pulse-glow 2s ease-in-out infinite' : 'none',
+      }} />
+      {c.label}
+    </span>
+  );
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return 'Never';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 0) return 'Just now';
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 function DevicesTab({ token, onAuthError }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [revoking, setRevoking] = useState(null);
   const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const autoRefreshRef = useRef(null);
 
   const fetchDevices = useCallback(async () => {
     setLoading(true);
@@ -453,13 +502,13 @@ function DevicesTab({ token, onAuthError }) {
       const { adminCRUD } = await import('../services/supabaseSync');
       const data = await adminCRUD(token, 'list_devices', { cacheBust: Date.now() });
       if (data.success) {
-        // Map snake_case to camelCase
         const mappedDevices = (data.devices || []).map(d => ({
            deviceIdHash: d.device_id_hash,
            estate: d.estate_code,
            operatorName: d.operator_name,
            approvedAt: d.approved_at,
            lastSeenAt: d.last_seen_at,
+           lastSyncAt: d.last_sync_at,
            revoked: d.revoked
         }));
         setDevices(mappedDevices);
@@ -478,6 +527,9 @@ function DevicesTab({ token, onAuthError }) {
       await fetchDevices();
     };
     run();
+    // Auto-refresh every 30 seconds
+    autoRefreshRef.current = setInterval(fetchDevices, 30000);
+    return () => clearInterval(autoRefreshRef.current);
   }, [fetchDevices]);
 
   const loadDevices = () => {
@@ -510,6 +562,39 @@ function DevicesTab({ token, onAuthError }) {
   const activeDevices = devices.filter(d => d.revoked !== true && d.revoked !== 'true');
   const revokedDevices = devices.filter(d => d.revoked === true || d.revoked === 'true');
 
+  // Add status to each active device and sort (online first, then by most recently seen)
+  const devicesWithStatus = activeDevices.map(d => ({
+    ...d,
+    status: getDeviceStatus(d.lastSeenAt),
+  })).sort((a, b) => {
+    const statusOrder = { online: 0, unknown: 1, offline: 2 };
+    const orderDiff = (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2);
+    if (orderDiff !== 0) return orderDiff;
+    // Within same status group, sort by most recently seen
+    const aTime = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+    const bTime = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  // Apply status filter
+  const filteredDevices = statusFilter === 'all'
+    ? devicesWithStatus
+    : devicesWithStatus.filter(d => d.status === statusFilter);
+
+  const onlineCount = devicesWithStatus.filter(d => d.status === 'online').length;
+  const offlineCount = devicesWithStatus.filter(d => d.status === 'offline').length;
+  const unknownCount = devicesWithStatus.filter(d => d.status === 'unknown').length;
+
+  const filterBtnStyle = (active) => ({
+    width: 'auto', padding: '0.25rem 0.6rem', fontSize: '0.78rem',
+    borderRadius: 'var(--radius-md)',
+    background: active ? 'var(--accent-primary)' : 'var(--element-bg)',
+    color: active ? '#fff' : 'var(--text-muted)',
+    border: active ? 'none' : '1px solid var(--border-color)',
+    cursor: 'pointer', fontWeight: active ? 600 : 400,
+    transition: 'all 0.2s ease',
+  });
+
   return (
     <>
       {error && (
@@ -518,6 +603,61 @@ function DevicesTab({ token, onAuthError }) {
         </div>
       )}
 
+      {/* Online Status Summary */}
+      <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Smartphone size={18} color="var(--accent-primary)" /> Device Status
+          </h3>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Auto-refresh: 30s</span>
+            <button className="btn btn-secondary" onClick={loadDevices} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+              {loading ? <RefreshCw className="pulse" size={14} /> : <RefreshCw size={14} />} Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Status summary badges */}
+        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-md)', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.2)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#4caf50', boxShadow: '0 0 6px #4caf50' }} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#4caf50' }}>{onlineCount}</span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Online</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-md)', background: 'rgba(158, 158, 158, 0.08)', border: '1px solid rgba(158, 158, 158, 0.2)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#9e9e9e' }} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#9e9e9e' }}>{offlineCount}</span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Offline</span>
+          </div>
+          {unknownCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-md)', background: 'rgba(255, 152, 0, 0.08)', border: '1px solid rgba(255, 152, 0, 0.2)' }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff9800' }} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#ff9800' }}>{unknownCount}</span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Unknown</span>
+            </div>
+          )}
+        </div>
+
+        {/* Status filter */}
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <button style={filterBtnStyle(statusFilter === 'all')} onClick={() => setStatusFilter('all')}>
+            All ({devicesWithStatus.length})
+          </button>
+          <button style={filterBtnStyle(statusFilter === 'online')} onClick={() => setStatusFilter('online')}>
+            🟢 Online ({onlineCount})
+          </button>
+          <button style={filterBtnStyle(statusFilter === 'offline')} onClick={() => setStatusFilter('offline')}>
+            ⚫ Offline ({offlineCount})
+          </button>
+          {unknownCount > 0 && (
+            <button style={filterBtnStyle(statusFilter === 'unknown')} onClick={() => setStatusFilter('unknown')}>
+              🟡 Unknown ({unknownCount})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Active Devices Table */}
       <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -539,35 +679,43 @@ function DevicesTab({ token, onAuthError }) {
             }} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
               Migrate GAS Devices
             </button>
-            <button className="btn btn-secondary" onClick={loadDevices} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
-              {loading ? <RefreshCw className="pulse" size={14} /> : <RefreshCw size={14} />} Refresh
-            </button>
           </div>
         </div>
 
         {loading && devices.length === 0 ? (
           <div className="text-muted" style={{ textAlign: 'center', padding: '2rem 0' }}>Loading devices...</div>
-        ) : activeDevices.length === 0 ? (
-          <div className="text-muted" style={{ textAlign: 'center', padding: '1rem 0' }}>No active devices.</div>
+        ) : filteredDevices.length === 0 ? (
+          <div className="text-muted" style={{ textAlign: 'center', padding: '1rem 0' }}>
+            {statusFilter !== 'all' ? `No ${statusFilter} devices.` : 'No active devices.'}
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>Status</th>
                   <th style={{ padding: '0.5rem', textAlign: 'left' }}>Operator</th>
                   <th style={{ padding: '0.5rem', textAlign: 'left' }}>Estate</th>
-                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>Approved</th>
+                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>Device ID</th>
                   <th style={{ padding: '0.5rem', textAlign: 'left' }}>Last Seen</th>
                   <th style={{ padding: '0.5rem', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {activeDevices.map((d, i) => (
+                {filteredDevices.map((d, i) => (
                   <tr key={d.deviceIdHash || i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.5rem' }}>{d.operatorName || '-'}</td>
+                    <td style={{ padding: '0.5rem' }}>
+                      <StatusBadge status={d.status} />
+                    </td>
+                    <td style={{ padding: '0.5rem', fontWeight: 500 }}>{d.operatorName || '-'}</td>
                     <td style={{ padding: '0.5rem' }}>{d.estate || '-'}</td>
-                    <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>{formatDate(d.approvedAt)}</td>
-                    <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>{formatDate(d.lastSeenAt)}</td>
+                    <td style={{ padding: '0.5rem', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                      {(d.deviceIdHash || '').substring(0, 12)}…
+                    </td>
+                    <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
+                      <div>{timeAgo(d.lastSeenAt)}</div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{formatDate(d.lastSeenAt)}</div>
+                    </td>
                     <td style={{ padding: '0.5rem', textAlign: 'center' }}>
                       <button
                         className="btn btn-danger"
