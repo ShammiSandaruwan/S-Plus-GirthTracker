@@ -552,9 +552,12 @@ function getFriendlySyncErrorMessage(errorObj) {
 
     const loc = ENABLE_GPS_TAGGING ? getLastKnownLocation() : { latitude: null, longitude: null, accuracy: null, status: 'unavailable', googleMapLink: null };
 
-    let fieldId = null;
-    if (configFields.length > 0) {
-      const f = configFields.find(fld => fld.field_code === currentSettings.fieldNo);
+    let fieldId = currentSettings.fieldId || null;
+    if (!fieldId && configFields.length > 0) {
+      const selectedDiv = configDivisions.find(d => d.name === currentSettings.division);
+      const f = selectedDiv
+        ? configFields.find(fld => fld.field_code === currentSettings.fieldNo && fld.division_id === selectedDiv.id)
+        : configFields.find(fld => fld.field_code === currentSettings.fieldNo);
       if (f) fieldId = f.id;
     }
 
@@ -974,7 +977,7 @@ function getFriendlySyncErrorMessage(errorObj) {
                       <select
                         required
                         value={settings.division}
-                        onChange={e => setSettings({...settings, division: e.target.value, fieldNo: '', extent: ''})}
+                        onChange={e => setSettings({...settings, division: e.target.value, fieldNo: '', fieldId: null, extent: ''})}
                       >
                         <option value="">Select Division...</option>
                         {availableDivisions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
@@ -995,7 +998,7 @@ function getFriendlySyncErrorMessage(errorObj) {
                           onChange={e => {
                             const val = e.target.value;
                             const f = availableFields.find(fld => fld.field_code === val);
-                            setSettings({...settings, fieldNo: val, extent: f ? f.extent_ha : ''});
+                            setSettings({...settings, fieldNo: val, fieldId: f ? f.id : null, extent: f ? f.extent_ha : ''});
                           }}
                         >
                           <option value="">Select Field...</option>
@@ -1075,7 +1078,12 @@ function getFriendlySyncErrorMessage(errorObj) {
     return 'status-dot online';
   };
 
-  const selectedFieldObj = configFields.find(f => f.field_code === settings.fieldNo);
+  const selectedDivObj = configDivisions.find(d => d.name === settings.division);
+  const selectedFieldObj = settings.fieldId
+    ? configFields.find(f => f.id === settings.fieldId)
+    : selectedDivObj
+      ? configFields.find(f => f.field_code === settings.fieldNo && f.division_id === selectedDivObj.id)
+      : configFields.find(f => f.field_code === settings.fieldNo);
   const fieldDisplayName = selectedFieldObj?.display_name || settings.fieldNo;
   const compactContext = `${settings.estate} • ${settings.division} • ${fieldDisplayName}`;
 
@@ -1410,6 +1418,7 @@ function getFriendlySyncErrorMessage(errorObj) {
                   division: newFieldData.division,
                   fieldNo: newFieldData.fieldNo,
                   extent: newFieldData.extent,
+                  fieldId: newFieldData.fieldId || null,
                   treeNo: newFieldData.treeNo,
                   sessionId, 
                   sessionStartedAt 
@@ -1437,7 +1446,7 @@ function getFriendlySyncErrorMessage(errorObj) {
                           <select
                             required
                             value={newFieldData.division}
-                            onChange={e => setNewFieldData({...newFieldData, division: e.target.value, fieldNo: '', extent: ''})}
+                            onChange={e => setNewFieldData({...newFieldData, division: e.target.value, fieldNo: '', fieldId: null, extent: ''})}
                           >
                             <option value="">Select Division...</option>
                             {availableDivisions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
@@ -1456,7 +1465,7 @@ function getFriendlySyncErrorMessage(errorObj) {
                               onChange={e => {
                                 const val = e.target.value;
                                 const f = availableFields.find(fld => fld.field_code === val);
-                                setNewFieldData({...newFieldData, fieldNo: val, extent: f ? f.extent_ha : ''});
+                                setNewFieldData({...newFieldData, fieldNo: val, fieldId: f ? f.id : null, extent: f ? f.extent_ha : ''});
                               }}
                             >
                               <option value="">Select Field...</option>
