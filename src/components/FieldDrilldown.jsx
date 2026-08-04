@@ -211,7 +211,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <BarChart3 size={20} color="var(--accent-primary)" /> Field Detail
+              <BarChart3 size={20} color="var(--accent-primary)" /> Field Details
             </h3>
             <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
               {field.estateName || '-'} / {field.divisionName || '-'} — <strong style={{ color: 'var(--text-color)' }}>Field {field.fieldCode}</strong>
