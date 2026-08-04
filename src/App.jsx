@@ -632,7 +632,7 @@ function getFriendlySyncErrorMessage(errorObj) {
     if (navigator.onLine && !authError) {
       syncPending().catch(console.error);
     }
-  }, [syncPending, authError, configFields, treeCondition, conditionNote]);
+  }, [syncPending, authError, configFields, configDivisions, treeCondition, conditionNote]);
 
   useEffect(() => {
     if (!isSetupComplete) return;
