@@ -1,11 +1,16 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import legacy from '@vitejs/plugin-legacy'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    legacy({
+      targets: ['ios >= 13', 'safari >= 13'],
+      modernPolyfills: true,
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       useCredentials: true,
@@ -50,6 +55,19 @@ export default defineConfig({
       },
       devOptions: {
         enabled: false
+      },
+      workbox: {
+        globIgnores: ['**/*-legacy-*.js'],
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/.*-legacy-.*\.js$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'legacy-bundle-cache',
+              expiration: { maxEntries: 4 }
+            }
+          }
+        ]
       }
     })
   ],
