@@ -33,7 +33,7 @@ export function checkAbnormal(girthInches, sessionGirths) {
     const validGirths = (sessionGirths || []).filter(g => !isNaN(g) && g > 0);
 
     if (validGirths.length < 10) {
-      if (girthInches < 2 || girthInches > 80) {
+      if (girthInches > 80) {
         return {
           abnormalFlag: true,
           abnormalReason: 'Extreme reading detected.',
