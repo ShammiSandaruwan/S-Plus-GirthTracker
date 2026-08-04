@@ -175,7 +175,9 @@ async function listDivisions(db: any, body: any) {
 }
 
 async function createDivision(db: any, body: any) {
-  const { estateId, code, name } = body;
+  const estateId = body.estateId || body.estate_id;
+  const code = body.code;
+  const name = body.name;
   if (!estateId || !code || !name) return respond({ error: 'estateId, code, name required' }, 400);
 
   const { data, error } = await db.from('divisions')
@@ -202,8 +204,10 @@ async function listFields(db: any, body: any) {
   let query = db.from('fields')
     .select('*, estates(code, name), divisions(code, name)')
     .order('field_code');
-  if (body.divisionId) query = query.eq('division_id', body.divisionId);
-  if (body.estateId) query = query.eq('estate_id', body.estateId);
+  const divisionId = body.divisionId || body.division_id;
+  const estateId = body.estateId || body.estate_id;
+  if (divisionId) query = query.eq('division_id', divisionId);
+  if (estateId) query = query.eq('estate_id', estateId);
   if (!body.includeInactive) query = query.eq('active', true);
   const { data, error } = await query;
   if (error) throw error;
@@ -211,8 +215,13 @@ async function listFields(db: any, body: any) {
 }
 
 async function createField(db: any, body: any) {
-  const { estateId, divisionId, fieldCode, extentHa, displayName } = body;
-  if (!estateId || !divisionId || !fieldCode || !extentHa) {
+  const estateId = body.estateId || body.estate_id;
+  const divisionId = body.divisionId || body.division_id;
+  const fieldCode = body.fieldCode || body.field_code;
+  const extentHa = body.extentHa ?? body.extent_ha;
+  const displayName = body.displayName ?? body.display_name;
+
+  if (!estateId || !divisionId || !fieldCode || extentHa === undefined || extentHa === null || extentHa === '') {
     return respond({ error: 'estateId, divisionId, fieldCode, extentHa required' }, 400);
   }
 
