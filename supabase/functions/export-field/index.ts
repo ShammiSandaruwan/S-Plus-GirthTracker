@@ -173,36 +173,59 @@ serve(async (req) => {
     const spreadsheetId = mapping.spreadsheet_id;
     const tabName = mapping.tab_name || 'Sheet1';
 
-    // 4. Fetch measurements
-    let query = supabaseAdmin
-      .from('census_measurements')
-      .select('*');
+    const PAGE_SIZE = 1000;
 
-    if (fieldId) {
-      query = query.eq('field_id', fieldId);
-    } else {
-      if (estateCode || estateName) {
-        const estateVals = Array.from(new Set([estateCode, estateName].filter(Boolean)));
-        query = query.in('estate', estateVals);
+    const buildExportQuery = () => {
+      let q = supabaseAdmin
+        .from('census_measurements')
+        .select('*');
+
+      if (fieldId) {
+        q = q.eq('field_id', fieldId);
+      } else {
+        if (estateCode || estateName) {
+          const estateVals = Array.from(new Set([estateCode, estateName].filter(Boolean)));
+          q = q.in('estate', estateVals);
+        }
+        if (fieldCode) {
+          q = q.eq('field_no', fieldCode);
+        }
+        if (divisionCode) {
+          q = q.eq('division', divisionCode);
+        }
       }
-      if (fieldCode) {
-        query = query.eq('field_no', fieldCode);
+
+      if (dateFrom) q = q.gte('measured_at', dateFrom);
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        q = q.lte('measured_at', toDate.toISOString());
       }
-      if (divisionCode) {
-        query = query.eq('division', divisionCode);
+
+      return q.order('tree_no', { ascending: true });
+    };
+
+    let measurements: any[] = [];
+    let page = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const fromIndex = page * PAGE_SIZE;
+      const toIndex = (page + 1) * PAGE_SIZE - 1;
+      const { data, error: fetchErr } = await buildExportQuery().range(fromIndex, toIndex);
+
+      if (fetchErr) throw fetchErr;
+
+      if (data && data.length > 0) {
+        measurements.push(...data);
+      }
+
+      if (!data || data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        page++;
       }
     }
-
-    if (dateFrom) query = query.gte('measured_at', dateFrom);
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      query = query.lte('measured_at', toDate.toISOString());
-    }
-
-    const { data: measurements, error: fetchErr } = await query.order('tree_no', { ascending: true });
-
-    if (fetchErr) throw fetchErr;
 
     if (!measurements || measurements.length === 0) {
       return new Response(JSON.stringify({ success: true, message: 'No measurements found for this field', rowCount: 0 }), {

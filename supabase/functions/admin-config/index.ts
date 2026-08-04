@@ -723,14 +723,31 @@ async function getFieldTreeReport(db: any, body: any) {
     }
   }
 
+  const PAGE_SIZE = 1000;
+
   let linkedRows: any[] = [];
   if (fieldRow?.id) {
-    const { data, error: linkedErr } = await db
-      .from('census_measurements')
-      .select('tree_no, girth, tree_condition')
-      .eq('field_id', fieldRow.id);
-    if (linkedErr) throw linkedErr;
-    if (data) linkedRows = data;
+    let page = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const fromIndex = page * PAGE_SIZE;
+      const toIndex = (page + 1) * PAGE_SIZE - 1;
+      const { data, error: linkedErr } = await db
+        .from('census_measurements')
+        .select('tree_no, girth, tree_condition')
+        .eq('field_id', fieldRow.id)
+        .range(fromIndex, toIndex);
+
+      if (linkedErr) throw linkedErr;
+      if (data && data.length > 0) {
+        linkedRows.push(...data);
+      }
+      if (!data || data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
   }
 
   let legacyRows: any[] = [];
@@ -739,15 +756,30 @@ async function getFieldTreeReport(db: any, body: any) {
   const searchDivision = (fieldRow?.divisions?.name || fieldRow?.divisions?.code || division || '').toLowerCase().trim();
 
   if (searchCode) {
-    const { data: candidateRows, error: legacyErr } = await db
-      .from('census_measurements')
-      .select('tree_no, girth, tree_condition, estate, division, field_no, field_id')
-      .ilike('field_no', searchCode)
-      .limit(5000);
+    let candidateRows: any[] = [];
+    let page = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const fromIndex = page * PAGE_SIZE;
+      const toIndex = (page + 1) * PAGE_SIZE - 1;
+      const { data, error: legacyErr } = await db
+        .from('census_measurements')
+        .select('tree_no, girth, tree_condition, estate, division, field_no, field_id')
+        .ilike('field_no', searchCode)
+        .range(fromIndex, toIndex);
 
-    if (legacyErr) throw legacyErr;
+      if (legacyErr) throw legacyErr;
+      if (data && data.length > 0) {
+        candidateRows.push(...data);
+      }
+      if (!data || data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
 
-    legacyRows = (candidateRows || []).filter((r: any) => {
+    legacyRows = candidateRows.filter((r: any) => {
       if (fieldRow?.id && r.field_id === fieldRow.id) return false; // Already included
       const rEstate = (r.estate || '').toLowerCase().trim();
       const rDiv = (r.division || '').toLowerCase().trim();

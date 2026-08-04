@@ -53,12 +53,9 @@ serve(async (req) => {
       });
     }
 
-    // Allow fetching across all estates if no specific estate or estate_id is provided
-    // If estate_id is provided, use it. Else fallback to text.
-    let query = supabaseAdmin
-      .from('census_measurements')
-      .select('*');
+    const PAGE_SIZE = 1000;
 
+    let estateValues: string[] | null = null;
     if (estate_id) {
       const { data: estateRow } = await supabaseAdmin
         .from('estates')
@@ -67,13 +64,11 @@ serve(async (req) => {
         .maybeSingle();
 
       if (estateRow) {
-        const estateValues = Array.from(new Set([estateRow.code, estateRow.name].filter(Boolean)));
-        query = query.in('estate', estateValues);
+        estateValues = Array.from(new Set([estateRow.code, estateRow.name].filter(Boolean)));
       }
-    } else if (estate && estate !== 'all') {
-      query = query.eq('estate', estate);
     }
 
+    let divValues: string[] | null = null;
     if (division_id) {
       const { data: divRow } = await supabaseAdmin
         .from('divisions')
@@ -82,39 +77,73 @@ serve(async (req) => {
         .maybeSingle();
 
       if (divRow) {
-        const divValues = Array.from(new Set([divRow.code, divRow.name].filter(Boolean)));
-        query = query.in('division', divValues);
+        divValues = Array.from(new Set([divRow.code, divRow.name].filter(Boolean)));
       }
-    } else if (division && division !== 'all') {
-      query = query.eq('division', division);
     }
 
-    if (field_id) {
-      query = query.eq('field_id', field_id);
-    } else if (fieldNo && fieldNo !== 'all') {
-      query = query.eq('field_no', fieldNo);
-    }
+    const buildQuery = () => {
+      let query = supabaseAdmin
+        .from('census_measurements')
+        .select('*');
 
-    if (dateFrom) query = query.gte('measured_at', dateFrom);
-    
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      query = query.lte('measured_at', toDate.toISOString());
-    }
+      if (estateValues && estateValues.length > 0) {
+        query = query.in('estate', estateValues);
+      } else if (estate && estate !== 'all') {
+        query = query.eq('estate', estate);
+      }
 
-    if (status && status !== 'all') {
-      if (status === 'tappable') query = query.eq('recommendation_status', 'tappable');
-      if (status === 'approaching') query = query.eq('recommendation_status', 'approaching');
-      if (status === 'below') query = query.eq('recommendation_status', 'not_ready');
-      if (status === 'abnormal') query = query.eq('abnormal_flag', true);
-    }
+      if (divValues && divValues.length > 0) {
+        query = query.in('division', divValues);
+      } else if (division && division !== 'all') {
+        query = query.eq('division', division);
+      }
 
-    // We can limit this if the dataset is huge, but for now fetch all matches
-    const { data: measurements, error: dbError } = await query.order('measured_at', { ascending: false });
+      if (field_id) {
+        query = query.eq('field_id', field_id);
+      } else if (fieldNo && fieldNo !== 'all') {
+        query = query.eq('field_no', fieldNo);
+      }
 
-    if (dbError) {
-      throw new Error(`Failed to fetch data: ${dbError.message}`);
+      if (dateFrom) query = query.gte('measured_at', dateFrom);
+      
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        query = query.lte('measured_at', toDate.toISOString());
+      }
+
+      if (status && status !== 'all') {
+        if (status === 'tappable') query = query.eq('recommendation_status', 'tappable');
+        if (status === 'approaching') query = query.eq('recommendation_status', 'approaching');
+        if (status === 'below') query = query.eq('recommendation_status', 'not_ready');
+        if (status === 'abnormal') query = query.eq('abnormal_flag', true);
+      }
+
+      return query.order('measured_at', { ascending: false });
+    };
+
+    let measurements: any[] = [];
+    let page = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const fromIndex = page * PAGE_SIZE;
+      const toIndex = (page + 1) * PAGE_SIZE - 1;
+      const { data, error: dbError } = await buildQuery().range(fromIndex, toIndex);
+
+      if (dbError) {
+        throw new Error(`Failed to fetch data: ${dbError.message}`);
+      }
+
+      if (data && data.length > 0) {
+        measurements.push(...data);
+      }
+
+      if (!data || data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        page++;
+      }
     }
 
     // Map to the frontend expected structure

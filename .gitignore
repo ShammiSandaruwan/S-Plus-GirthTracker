@@ -40,3 +40,4 @@ output/
 imports/
 supabase/.temp/cli-latest
 supabase/.temp/cli-latest
+docs/qa-audit-report.md
