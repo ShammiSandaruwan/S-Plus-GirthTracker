@@ -21,7 +21,7 @@ import { Settings2 } from 'lucide-react';
 
 
 function AdminMap({ measurements, filter, mapRef }) {
-  const [showAccuracy, setShowAccuracy] = useState(false);
+  const [showAccuracy, setShowAccuracy] = useState(true);
 
   return (
     <div className="glass-card admin-map-card" ref={mapRef}>
