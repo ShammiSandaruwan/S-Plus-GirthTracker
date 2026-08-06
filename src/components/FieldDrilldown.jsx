@@ -6,13 +6,15 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const clientFallback = useMemo(() => {
-    if (!field || !measurements || measurements.length === 0) return null;
+  const [selectedCondition, setSelectedCondition] = useState(null);
+
+  const matchingMeasurements = useMemo(() => {
+    if (!field || !measurements || measurements.length === 0) return [];
     const fCode = (field.fieldCode || '').toLowerCase().trim();
     const eName = (field.estateName || '').toLowerCase().trim();
     const dName = (field.divisionName || '').toLowerCase().trim();
 
-    const matching = measurements.filter(m => {
+    return measurements.filter(m => {
       const mField = (m.fieldNo || '').toLowerCase().trim();
       const mEstate = (m.estate || '').toLowerCase().trim();
       const mDiv = (m.division || '').toLowerCase().trim();
@@ -21,10 +23,12 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       const dMatch = !dName || mDiv === dName || dName.includes(mDiv) || mDiv.includes(dName);
       return fMatch && eMatch && dMatch;
     });
+  }, [field, measurements]);
 
-    if (matching.length === 0) return null;
+  const clientFallback = useMemo(() => {
+    if (matchingMeasurements.length === 0) return null;
 
-    const rows = [...matching].sort((a, b) => (a.treeNo ?? 0) - (b.treeNo ?? 0));
+    const rows = [...matchingMeasurements].sort((a, b) => (a.treeNo ?? 0) - (b.treeNo ?? 0));
     const treeCounts = {};
     rows.forEach(r => {
       if (r.treeNo != null) treeCounts[r.treeNo] = (treeCounts[r.treeNo] || 0) + 1;
@@ -77,9 +81,9 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       duplicateCount: duplicates.length,
       healthStats,
       girthDist,
-      totalRecords: matching.length
+      totalRecords: matchingMeasurements.length
     };
-  }, [field, measurements]);
+  }, [matchingMeasurements]);
 
   const loadReport = useCallback(async () => {
     if (!field || !token) return;
@@ -326,15 +330,24 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
                   <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#4caf50' }}>{activeData.healthStats?.healthy || 0}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Healthy</div>
                 </div>
-                <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255, 193, 7, 0.15)', border: '1px solid rgba(255, 193, 7, 0.3)', textAlign: 'center' }}>
+                <div 
+                  onClick={() => setSelectedCondition('runt')}
+                  style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255, 193, 7, 0.15)', border: '1px solid rgba(255, 193, 7, 0.3)', textAlign: 'center', cursor: 'pointer' }}
+                >
                   <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ffc107' }}>{activeData.healthStats?.runt || 0}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Runt</div>
                 </div>
-                <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', textAlign: 'center' }}>
+                <div 
+                  onClick={() => setSelectedCondition('dead')}
+                  style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', textAlign: 'center', cursor: 'pointer' }}
+                >
                   <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ef4444' }}>{activeData.healthStats?.dead || 0}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Dead</div>
                 </div>
-                <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(236, 72, 153, 0.15)', border: '1px solid rgba(236, 72, 153, 0.3)', textAlign: 'center' }}>
+                <div 
+                  onClick={() => setSelectedCondition('damaged')}
+                  style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(236, 72, 153, 0.15)', border: '1px solid rgba(236, 72, 153, 0.3)', textAlign: 'center', cursor: 'pointer' }}
+                >
                   <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#ec4899' }}>{activeData.healthStats?.damaged || 0}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Damaged</div>
                 </div>
@@ -361,6 +374,49 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
           </>
         ) : null}
       </div>
+
+      {/* Condition Trees Modal */}
+      {selectedCondition && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ background: 'var(--bg-primary)', width: '100%', maxWidth: '400px', maxHeight: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', textTransform: 'capitalize' }}>{selectedCondition} Trees</h3>
+              <button onClick={() => setSelectedCondition(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ padding: '1rem', overflowY: 'auto' }}>
+              {(() => {
+                const filtered = matchingMeasurements.filter(m => {
+                  if (selectedCondition === 'damaged') return m.treeCondition === 'damaged' || m.treeCondition === 'animal_attack';
+                  return m.treeCondition === selectedCondition;
+                });
+                
+                if (filtered.length === 0) return <div>No {selectedCondition} trees found.</div>;
+                
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <th style={{ textAlign: 'left', padding: '0.5rem' }}>Tree No</th>
+                        <th style={{ textAlign: 'left', padding: '0.5rem' }}>Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((m, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '0.5rem' }}>{m.treeNo ?? '-'}</td>
+                          <td style={{ padding: '0.5rem' }}>{m.conditionNote || m.abnormalReason || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
