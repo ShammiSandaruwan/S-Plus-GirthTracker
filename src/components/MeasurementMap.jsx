@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useRef, memo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, LayersControl } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
@@ -6,14 +6,14 @@ import 'leaflet/dist/leaflet.css';
 import { Target, AlertTriangle } from 'lucide-react';
 import { getCurrentLocation, onLocationUpdate, offLocationUpdate } from '../services/location';
 
-const MIN_MOVEMENT_METERS = 5;
-
-const USER_LOCATION_ICON = L.divIcon({
+const createUserLocationIcon = () => {
+  return L.divIcon({
     className: 'user-location-marker',
     html: `<div style="width: 14px; height: 14px; background-color: #2196f3; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
     iconSize: [14, 14],
     iconAnchor: [7, 7]
   });
+};
 
 function getStatus(m) {
   return String(m.recommendationStatus || m.recommendationText || '').toLowerCase();
@@ -47,22 +47,16 @@ function getMarkerClass(m) {
   return 'unknown';
 }
 
-const createDivIconForClass = (colorClass) => L.divIcon({
-  className: 'tree-marker-icon',
-  html: `<span class="map-legend-dot ${colorClass}" style="display: block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid white;"></span>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-  popupAnchor: [0, -7]
-});
-
-const ICONS_BY_CLASS = {
-  abnormal: createDivIconForClass('abnormal'),
-  approaching: createDivIconForClass('approaching'),
-  tappable: createDivIconForClass('tappable'),
-  below: createDivIconForClass('below'),
-  unknown: createDivIconForClass('unknown'),
+const createDivIcon = (m) => {
+  const colorClass = getMarkerClass(m);
+  return L.divIcon({
+    className: 'tree-marker-icon',
+    html: `<span class="map-legend-dot ${colorClass}" style="display: block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid white;"></span>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -7]
+  });
 };
-const getIconForClass = (cls) => ICONS_BY_CLASS[cls] || ICONS_BY_CLASS.unknown;
 
 function FitBounds({ points }) {
   const map = useMap();
@@ -171,62 +165,6 @@ function MapResizeObserver() {
   return null;
 }
 
-const TreeMarker = memo(function TreeMarker({ m, userLocation, adminMode, icon }) {
-  const mLat = parseFloat(m.latitude);
-  const mLng = parseFloat(m.longitude);
-
-  let distToTree = null;
-  if (userLocation) {
-    try {
-      distToTree = L.latLng(userLocation.latitude, userLocation.longitude)
-        .distanceTo(L.latLng(mLat, mLng));
-    } catch { /* noop, matches current behavior */ }
-  }
-
-  return (
-    <Marker position={[mLat, mLng]} icon={icon}>
-      <Popup>
-        <div style={{ fontSize: '0.9rem', minWidth: '150px' }}>
-          <strong>Tree: {m.treeNo}</strong><br />
-          Girth: {m.girth}&quot;<br />
-          Date: {m.date || (m.timestamp ? new Date(m.timestamp).toLocaleDateString() : 'Unknown')}<br />
-          Status: {m.recommendationText || m.recommendationStatus || 'N/A'}<br />
-
-          {isAbnormal(m) && (
-            <div style={{ color: '#9c27b0', fontWeight: 'bold', marginTop: '4px' }}>
-              ⚠️ {adminMode ? (m.abnormalReason || 'Abnormal Reading') : 'Abnormal Reading'}
-            </div>
-          )}
-
-          {distToTree !== null && (
-            <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)', fontSize: '0.8rem' }}>
-              <div><strong>Distance:</strong> {distToTree < 1000 ? `${distToTree.toFixed(1)} m` : `${(distToTree / 1000).toFixed(2)} km`}</div>
-              {userLocation?.accuracy && userLocation.accuracy > distToTree && (
-                <div style={{ color: '#ff9800', fontSize: '0.75rem', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                  <AlertTriangle size={12} /> Low GPS confidence
-                </div>
-              )}
-            </div>
-          )}
-
-          <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Tree GPS Acc: {m.gpsAccuracy ? `${m.gpsAccuracy}m` : 'N/A'}
-            {parseFloat(m.gpsAccuracy) > 30 && <span style={{ color: '#ff9800', display: 'block' }}>Low GPS confidence</span>}
-          </div>
-
-          {(adminMode && m.googleMapLink) && (
-            <div style={{ marginTop: '8px' }}>
-              <a href={m.googleMapLink} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
-                Open in Google Maps
-              </a>
-            </div>
-          )}
-        </div>
-      </Popup>
-    </Marker>
-  );
-});
-
 export default function MeasurementMap({
   measurements = [],
   filter = 'all',
@@ -238,29 +176,13 @@ export default function MeasurementMap({
     const loc = getCurrentLocation();
     return (loc && loc.latitude && loc.longitude) ? loc : null;
   });
-  const lastLocationRef = useRef(validUserLocation);
-
-  const [initialLayerIsSatellite] = useState(() => {
-    try { return localStorage.getItem('girth_tracker_map_layer') === 'satellite'; }
-    catch { return false; }
-  });
 
   useEffect(() => {
 
     const handleLocation = (newLoc) => {
-      if (!newLoc || !newLoc.latitude || !newLoc.longitude) return;
-
-      const prev = lastLocationRef.current;
-      if (prev) {
-        try {
-          const moved = L.latLng(prev.latitude, prev.longitude)
-            .distanceTo(L.latLng(newLoc.latitude, newLoc.longitude));
-          if (moved < MIN_MOVEMENT_METERS) return;
-        } catch { /* fall through, update anyway */ }
+      if (newLoc && newLoc.latitude && newLoc.longitude) {
+        setValidUserLocation(newLoc);
       }
-
-      lastLocationRef.current = newLoc;
-      setValidUserLocation(newLoc);
     };
 
     onLocationUpdate(handleLocation);
@@ -287,14 +209,6 @@ export default function MeasurementMap({
       return true;
     });
   }, [gpsMeasurements, filter]);
-
-  const accuracyPoints = useMemo(() => {
-    if (!showAccuracy) return [];
-    return filteredMeasurements.filter(m => {
-      const acc = parseFloat(m.gpsAccuracy);
-      return !isNaN(acc) && acc > 0;
-    });
-  }, [showAccuracy, filteredMeasurements]);
 
   if (gpsMeasurements.length === 0) {
     return (
@@ -336,7 +250,10 @@ export default function MeasurementMap({
           <LayersControl position="topright">
             <LayersControl.BaseLayer
               name="OpenStreetMap"
-              checked={!initialLayerIsSatellite}
+              checked={(() => {
+                try { return localStorage.getItem('girth_tracker_map_layer') !== 'satellite'; }
+                catch { return true; }
+              })()}
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -353,7 +270,10 @@ export default function MeasurementMap({
 
             <LayersControl.BaseLayer
               name="Satellite (Esri)"
-              checked={initialLayerIsSatellite}
+              checked={(() => {
+                try { return localStorage.getItem('girth_tracker_map_layer') === 'satellite'; }
+                catch { return false; }
+              })()}
             >
               <TileLayer
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -374,7 +294,7 @@ export default function MeasurementMap({
             <>
               <Marker
                 position={[validUserLocation.latitude, validUserLocation.longitude]}
-                icon={USER_LOCATION_ICON}
+                icon={createUserLocationIcon()}
                 zIndexOffset={1000}
               >
                 <Popup>
@@ -401,35 +321,90 @@ export default function MeasurementMap({
             </>
           )}
 
-          {accuracyPoints.map((m, i) => (
-            <Circle
-              key={`acc-${m.id || m.treeNo || i}`}
-              center={[parseFloat(m.latitude), parseFloat(m.longitude)]}
-              radius={parseFloat(m.gpsAccuracy)}
-              pathOptions={{
-                color: getMarkerColor(m),
-                fillColor: getMarkerColor(m),
-                weight: 1,
-                opacity: 0.3,
-                fillOpacity: 0.1
-              }}
-            />
-          ))}
+          {showAccuracy && filteredMeasurements.map((m, i) => {
+            const acc = parseFloat(m.gpsAccuracy);
+            if (isNaN(acc) || acc <= 0) return null;
+
+            return (
+              <Circle
+                key={`acc-${m.id || m.treeNo || i}`}
+                center={[parseFloat(m.latitude), parseFloat(m.longitude)]}
+                radius={acc}
+                pathOptions={{
+                  color: getMarkerColor(m),
+                  fillColor: getMarkerColor(m),
+                  weight: 1,
+                  opacity: 0.3,
+                  fillOpacity: 0.1
+                }}
+              />
+            );
+          })}
 
           <MarkerClusterGroup
             chunkedLoading
             maxClusterRadius={40}
             disableClusteringAtZoom={17}
           >
-            {filteredMeasurements.map((m, i) => (
-              <TreeMarker
-                key={m.id || `${m.treeNo}-${i}`}
-                m={m}
-                userLocation={validUserLocation}
-                adminMode={adminMode}
-                icon={getIconForClass(getMarkerClass(m))}
-              />
-            ))}
+            {filteredMeasurements.map((m, i) => {
+              const mLat = parseFloat(m.latitude);
+              const mLng = parseFloat(m.longitude);
+
+              let distToTree = null;
+              if (validUserLocation) {
+                try {
+                  distToTree = L.latLng(validUserLocation.latitude, validUserLocation.longitude)
+                    .distanceTo(L.latLng(mLat, mLng));
+                } catch { /* noop */ }
+              }
+
+              return (
+                <Marker
+                  key={m.id || `${m.treeNo}-${i}`}
+                  position={[mLat, mLng]}
+                  icon={createDivIcon(m)}
+                >
+                  <Popup>
+                    <div style={{ fontSize: '0.9rem', minWidth: '150px' }}>
+                      <strong>Tree: {m.treeNo}</strong><br />
+                      Girth: {m.girth}&quot;<br />
+                      Date: {m.date || (m.timestamp ? new Date(m.timestamp).toLocaleDateString() : 'Unknown')}<br />
+                      Status: {m.recommendationText || m.recommendationStatus || 'N/A'}<br />
+
+                      {isAbnormal(m) && (
+                        <div style={{ color: '#9c27b0', fontWeight: 'bold', marginTop: '4px' }}>
+                          ⚠️ {adminMode ? (m.abnormalReason || 'Abnormal Reading') : 'Abnormal Reading'}
+                        </div>
+                      )}
+
+                      {distToTree !== null && (
+                        <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)', fontSize: '0.8rem' }}>
+                          <div><strong>Distance:</strong> {distToTree < 1000 ? `${distToTree.toFixed(1)} m` : `${(distToTree / 1000).toFixed(2)} km`}</div>
+                          {validUserLocation?.accuracy && validUserLocation.accuracy > distToTree && (
+                            <div style={{ color: '#ff9800', fontSize: '0.75rem', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                              <AlertTriangle size={12} /> Low GPS confidence
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Tree GPS Acc: {m.gpsAccuracy ? `${m.gpsAccuracy}m` : 'N/A'}
+                        {parseFloat(m.gpsAccuracy) > 30 && <span style={{ color: '#ff9800', display: 'block' }}>Low GPS confidence</span>}
+                      </div>
+
+                      {(adminMode && m.googleMapLink) && (
+                        <div style={{ marginTop: '8px' }}>
+                          <a href={m.googleMapLink} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
+                            Open in Google Maps
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MarkerClusterGroup>
         </MapContainer>
       </div>
