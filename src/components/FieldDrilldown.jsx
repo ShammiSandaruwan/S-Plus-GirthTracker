@@ -378,21 +378,22 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       {/* Condition Trees Modal */}
       {selectedCondition && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div style={{ background: 'var(--bg-primary)', width: '100%', maxWidth: '400px', maxHeight: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ background: 'var(--bg-main)', color: 'var(--text-main)', width: '100%', maxWidth: '400px', maxHeight: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)' }}>
               <h3 style={{ margin: 0, fontSize: '1.1rem', textTransform: 'capitalize' }}>{selectedCondition} Trees</h3>
-              <button onClick={() => setSelectedCondition(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}>
+              <button onClick={() => setSelectedCondition(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)' }}>
                 <X size={20} />
               </button>
             </div>
             <div style={{ padding: '1rem', overflowY: 'auto' }}>
               {(() => {
                 const filtered = matchingMeasurements.filter(m => {
-                  if (selectedCondition === 'damaged') return m.treeCondition === 'damaged' || m.treeCondition === 'animal_attack';
-                  return m.treeCondition === selectedCondition;
+                  const cond = (m.treeCondition || 'healthy').toLowerCase();
+                  if (selectedCondition === 'damaged') return cond === 'damaged' || cond === 'animal_attack';
+                  return cond === selectedCondition;
                 });
                 
-                if (filtered.length === 0) return <div>No {selectedCondition} trees found.</div>;
+                if (filtered.length === 0) return <div style={{ color: 'var(--text-muted)' }}>No {selectedCondition} trees found in current filter.</div>;
                 
                 return (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
