@@ -375,17 +375,27 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <th style={{ textAlign: 'left', padding: '0.5rem', width: '3rem' }}>#</th>
                         <th style={{ textAlign: 'left', padding: '0.5rem' }}>Tree No</th>
                         <th style={{ textAlign: 'left', padding: '0.5rem' }}>Reason</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((m, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                          <td style={{ padding: '0.5rem' }}>{m.treeNo ?? '-'}</td>
-                          <td style={{ padding: '0.5rem' }}>{m.reason || m.conditionNote || m.abnormalReason || '-'}</td>
-                        </tr>
-                      ))}
+                      {filtered.map((m, i) => {
+                        const rawReason = m.reason || m.conditionNote || m.abnormalReason;
+                        const isPureNumber = rawReason && !isNaN(Number(String(rawReason).trim()));
+                        const finalReason = (!rawReason || String(rawReason).trim() === '' || isPureNumber) 
+                          ? 'No reason recorded' 
+                          : rawReason;
+                          
+                        return (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                            <td style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>{i + 1}</td>
+                            <td style={{ padding: '0.5rem' }}>{m.treeNo ?? '-'}</td>
+                            <td style={{ padding: '0.5rem' }}>{finalReason}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 );
