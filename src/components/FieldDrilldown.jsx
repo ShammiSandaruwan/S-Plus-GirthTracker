@@ -3,7 +3,6 @@ import { BarChart3, X, RefreshCw, AlertTriangle, Activity, Database, CheckCircle
 
 export default function FieldDrilldown({ token, field, measurements, onClose, onAuthError }) {
   const [reportData, setReportData] = useState(null);
-  const [fullMeasurements, setFullMeasurements] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -25,8 +24,6 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       return fMatch && eMatch && dMatch;
     });
   }, [field, measurements]);
-
-  const displayMeasurements = fullMeasurements || matchingMeasurements;
 
   const clientFallback = useMemo(() => {
     if (matchingMeasurements.length === 0) return null;
@@ -84,91 +81,45 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       duplicateCount: duplicates.length,
       healthStats,
       girthDist,
+      treeRows: matchingMeasurements,
       totalRecords: matchingMeasurements.length
     };
   }, [matchingMeasurements]);
 
-  const loadReport = useCallback(async () => {
-    if (!field || !token) return;
-    setLoading(true);
-    setError('');
-    try {
-      const { adminCRUD } = await import('../services/supabaseSync');
-      const data = await adminCRUD(token, 'field_tree_report', {
-        field_id: field.fieldId,
-        estate: field.estateName,
-        division: field.divisionName,
-        fieldNo: field.fieldCode
-      });
-      setReportData(data);
-    } catch (err) {
-      if (err.message && err.message.includes('Invalid or expired')) {
-        onAuthError(err.message);
-      } else if (!clientFallback) {
-        setError("Couldn't load field details from server.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [field, token, onAuthError, clientFallback]);
-
   useEffect(() => {
-    let active = true;
+    let ignore = false;
     const fetchReport = async () => {
-      if (!field) return;
+      if (!field || !token) return;
       setLoading(true);
       setError('');
       try {
-        const { adminCRUD, fetchAdminMeasurements } = await import('../services/supabaseSync');
-        const fId = field.id || field.fieldId;
-        
-        // Fetch report counts and full measurements concurrently
-        const fetchPromises = [
-          adminCRUD(token, 'field_tree_report', {
-            field_id: fId,
-            estate: field.estateName,
-            division: field.divisionName,
-            fieldNo: field.fieldCode,
-          }).catch(e => {
-            console.warn('field_tree_report error:', e);
-            return null;
-          })
-        ];
-
-        // Only fetch full measurements if fId is available since we need a reliable way to query backend
-        if (fId) {
-          fetchPromises.push(
-            fetchAdminMeasurements(token, {
-              field_id: fId,
-              status: 'all' // Override any status filters to get ALL trees
-            }).catch(e => {
-              console.warn('fetchAdminMeasurements error:', e);
-              return null;
-            })
-          );
-        }
-
-        const [reportDataRes, measDataRes] = await Promise.all(fetchPromises);
-        
-        if (active) {
-          if (reportDataRes && reportDataRes.success) {
-            setReportData(reportDataRes);
-          }
-          if (measDataRes && measDataRes.success) {
-            setFullMeasurements(measDataRes.measurements);
-          }
+        const { adminCRUD } = await import('../services/supabaseSync');
+        const data = await adminCRUD(token, 'field_tree_report', {
+          field_id: field.id || field.fieldId,
+          estate: field.estateName,
+          division: field.divisionName,
+          fieldNo: field.fieldCode
+        });
+        if (!ignore) {
+          setReportData(data);
         }
       } catch (err) {
-        if (active) setError(err.message || 'Failed to load report data');
-        if (err.message?.includes('session')) onAuthError?.(err.message);
+        if (!ignore) {
+          if (err.message && err.message.includes('Invalid or expired')) {
+            onAuthError(err.message);
+          } else if (!clientFallback) {
+            setError("Couldn't load field details from server.");
+          }
+        }
       } finally {
+        if (!ignore) {
+          setLoading(false);
         }
       }
     };
+    
     fetchReport();
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, [field, token, onAuthError, clientFallback]);
 
   if (!field) return null;
@@ -412,13 +363,13 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
             </div>
             <div style={{ padding: '1rem', overflowY: 'auto' }}>
               {(() => {
-                const filtered = displayMeasurements.filter(m => {
+                const filtered = (activeData.treeRows || []).filter(m => {
                   const cond = (m.treeCondition || 'healthy').toLowerCase();
                   if (selectedCondition === 'damaged') return cond === 'damaged' || cond === 'animal_attack';
                   return cond === selectedCondition;
                 });
                 
-                if (filtered.length === 0) return <div style={{ color: 'var(--text-muted)' }}>No {selectedCondition} trees found in current dataset.</div>;
+                if (filtered.length === 0) return <div style={{ color: 'var(--text-muted)' }}>No {selectedCondition} trees found.</div>;
                 
                 return (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
@@ -432,7 +383,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
                       {filtered.map((m, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
                           <td style={{ padding: '0.5rem' }}>{m.treeNo ?? '-'}</td>
-                          <td style={{ padding: '0.5rem' }}>{m.conditionNote || m.abnormalReason || '-'}</td>
+                          <td style={{ padding: '0.5rem' }}>{m.reason || m.conditionNote || m.abnormalReason || '-'}</td>
                         </tr>
                       ))}
                     </tbody>
