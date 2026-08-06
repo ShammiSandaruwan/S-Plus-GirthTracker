@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { MapPin } from 'lucide-react';
 import MeasurementMap from './MeasurementMap';
 
-export default function FieldMap({ measurements }) {
+export default function FieldMap({ measurements, userLocation }) {
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState('all'); 
   const [showAccuracy, setShowAccuracy] = useState(false);
@@ -70,6 +70,7 @@ export default function FieldMap({ measurements }) {
             measurements={gpsMeasurements} 
             filter={filter} 
             showAccuracy={showAccuracy} 
+            userLocation={userLocation}
             height="350px" 
             adminMode={false} 
           />

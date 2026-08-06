@@ -20,7 +20,7 @@ import FieldDrilldown from './FieldDrilldown';
 import { Settings2 } from 'lucide-react';
 
 
-function AdminMap({ measurements, filter, mapRef }) {
+function AdminMap({ measurements, filter, mapRef, userLocation }) {
   const [showAccuracy, setShowAccuracy] = useState(true);
 
   return (
@@ -43,6 +43,7 @@ function AdminMap({ measurements, filter, mapRef }) {
           measurements={measurements} 
           filter={filter} 
           showAccuracy={showAccuracy} 
+          userLocation={userLocation}
           height="100%" 
           adminMode={true} 
         />

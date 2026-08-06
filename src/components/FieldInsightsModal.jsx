@@ -105,7 +105,16 @@ export default function FieldInsightsModal({ settings, isOpen, onClose }) {
           </div>
         )}
 
-        <FieldMap measurements={measurements || []} />
+        <FieldMap 
+          measurements={measurements || []} 
+          userLocation={
+            settings?.lastKnownLatitude && settings?.lastKnownLongitude ? {
+              latitude: settings.lastKnownLatitude,
+              longitude: settings.lastKnownLongitude,
+              accuracy: settings.lastKnownGpsAccuracy
+            } : null
+          }
+        />
       </div>
     </div>
   );
