@@ -71,11 +71,11 @@ function FitBounds({ points }) {
 
       if (bounds.isValid()) {
         if (points.length === 1) {
-          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 16);
+          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 18);
         } else {
           map.fitBounds(bounds, {
             padding: [24, 24],
-            maxZoom: 16
+            maxZoom: 18
           });
         }
       }
@@ -99,11 +99,11 @@ function MapControls({ points }) {
 
       if (bounds.isValid()) {
         if (points.length === 1) {
-          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 16);
+          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 18);
         } else {
           map.fitBounds(bounds, {
             padding: [24, 24],
-            maxZoom: 16
+            maxZoom: 18
           });
         }
       }
@@ -346,6 +346,7 @@ export default function MeasurementMap({
           <MarkerClusterGroup
             chunkedLoading
             maxClusterRadius={40}
+            disableClusteringAtZoom={17}
           >
             {filteredMeasurements.map((m, i) => {
               const mLat = parseFloat(m.latitude);
