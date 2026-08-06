@@ -1258,7 +1258,12 @@ export default function AdminPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [authInitialized, setAuthInitialized] = useState(false);
 
-  const [activeTab, setActiveTab] = useState('overview');
+  const VALID_TABS = ['overview', 'measurements', 'devices', 'config', 'qrcodes'];
+
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    return VALID_TABS.includes(requested) ? requested : 'overview';
+  });
   const [estates, setEstates] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [fields, setFields] = useState([]);
@@ -1661,6 +1666,12 @@ export default function AdminPage() {
       fetchConfig();
     }
   }, [token, configLoaded]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', activeTab);
+    window.history.replaceState(null, '', url);
+  }, [activeTab]);
 
   const handleEstateChange = (val) => {
     setSelectedEstateId(val);
