@@ -15,6 +15,9 @@ import AdminPage from './components/AdminPage';
 import SetPassword from './components/SetPassword';
 import './index.css';
 
+// 6 months default cooldown. Admins can change this to 12 months by updating this value to 12 * 30 * ...
+const FIELD_COMPLETION_COOLDOWN_MS = 6 * 30 * 24 * 60 * 60 * 1000;
+
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.3.1';
 
 const isEnvFlagEnabled = (value) => String(value).trim().toLowerCase() === 'true';
@@ -983,7 +986,10 @@ function getFriendlySyncErrorMessage(errorObj) {
                 
               const selectedDivisionObj = configDivisions.find(d => d.name === settings.division);
               const availableFields = selectedDivisionObj
-                ? configFields.filter(f => f.division_id === selectedDivisionObj.id)
+                ? configFields.filter(f => 
+                    f.division_id === selectedDivisionObj.id &&
+                    (!f.completed_at || (Date.now() - new Date(f.completed_at).getTime()) > FIELD_COMPLETION_COOLDOWN_MS)
+                  )
                 : [];
 
               return (
@@ -1452,7 +1458,10 @@ function getFriendlySyncErrorMessage(errorObj) {
                     
                   const selectedDivisionObj = configDivisions.find(d => d.name === newFieldData.division);
                   const availableFields = selectedDivisionObj
-                    ? configFields.filter(f => f.division_id === selectedDivisionObj.id)
+                    ? configFields.filter(f => 
+                        f.division_id === selectedDivisionObj.id &&
+                        (!f.completed_at || (Date.now() - new Date(f.completed_at).getTime()) > FIELD_COMPLETION_COOLDOWN_MS)
+                      )
                     : [];
 
                   return (

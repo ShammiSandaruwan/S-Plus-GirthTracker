@@ -85,6 +85,10 @@ serve(async (req) => {
         return await updateField(supabaseAdmin, body);
       case 'delete_field':
         return await deleteField(supabaseAdmin, body);
+      case 'mark_field_completed':
+        return await markFieldCompleted(supabaseAdmin, body);
+      case 'clear_field_completion':
+        return await clearFieldCompletion(supabaseAdmin, body);
 
       // === SHEET MAPPINGS ===
       case 'list_sheet_mappings':
@@ -301,6 +305,32 @@ async function deleteField(db: any, body: any) {
   const { error } = await db.from('fields').delete().eq('id', id);
   if (error) throw error;
   return respond({ success: true, message: 'Field deleted successfully' });
+}
+
+async function markFieldCompleted(db: any, body: any) {
+  const { field_id, admin_name } = body;
+  if (!field_id) return respond({ error: 'field_id is required' }, 400);
+  const { data, error } = await db
+    .from('fields')
+    .update({ completed_at: new Date().toISOString(), completed_by: admin_name || null })
+    .eq('id', field_id)
+    .select()
+    .single();
+  if (error) throw error;
+  return respond({ success: true, field: data });
+}
+
+async function clearFieldCompletion(db: any, body: any) {
+  const { field_id } = body;
+  if (!field_id) return respond({ error: 'field_id is required' }, 400);
+  const { data, error } = await db
+    .from('fields')
+    .update({ completed_at: null, completed_by: null })
+    .eq('id', field_id)
+    .select()
+    .single();
+  if (error) throw error;
+  return respond({ success: true, field: data });
 }
 
 // ======================== SHEET MAPPINGS ========================

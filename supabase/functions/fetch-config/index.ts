@@ -54,7 +54,7 @@ serve(async (req) => {
     // Fetch active fields
     const { data: fields } = await supabaseAdmin
       .from('fields')
-      .select('id, estate_id, division_id, field_code, display_name, extent_ha, yop')
+      .select('id, estate_id, division_id, field_code, display_name, extent_ha, yop, completed_at')
       .eq('active', true)
       .order('field_code');
 

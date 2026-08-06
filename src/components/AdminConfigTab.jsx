@@ -170,6 +170,42 @@ export default function AdminConfigTab({ token }) {
     }
   };
 
+  const handleMarkCompleted = async (fieldId) => {
+    if (!window.confirm('Are you sure you want to mark this field as completed?')) return;
+    setLoading(true);
+    try {
+      const res = await adminCRUD(token, 'mark_field_completed', { field_id: fieldId });
+      if (res.success) {
+        setMessage('Field marked as completed.');
+        loadFields(selectedDivisionId);
+      } else {
+        setMessage(res.error || 'Failed to mark field as completed.');
+      }
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearCompletion = async (fieldId) => {
+    if (!window.confirm('Are you sure you want to clear the completion status for this field?')) return;
+    setLoading(true);
+    try {
+      const res = await adminCRUD(token, 'clear_field_completion', { field_id: fieldId });
+      if (res.success) {
+        setMessage('Field completion status cleared.');
+        loadFields(selectedDivisionId);
+      } else {
+        setMessage(res.error || 'Failed to clear field completion status.');
+      }
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // --- MAPPINGS ---
   const handleSaveMapping = async (e) => {
     e.preventDefault();
@@ -370,9 +406,23 @@ export default function AdminConfigTab({ token }) {
                         <button className="btn btn-secondary" style={{ width: 'auto', padding: '0.2rem', marginRight: '0.25rem' }} onClick={() => setEditingField({...f, original_extent_ha: f.extent_ha})}>
                           <Edit2 size={14} />
                         </button>
-                        <button className="btn btn-danger" style={{ width: 'auto', padding: '0.2rem' }} onClick={() => handleDeleteField(f.id)}>
+                        <button className="btn btn-danger" style={{ width: 'auto', padding: '0.2rem', marginRight: '0.25rem' }} onClick={() => handleDeleteField(f.id)}>
                           <Trash2 size={14} />
                         </button>
+                        {f.completed_at ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span style={{ fontSize: '0.7rem', background: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                              Completed on {new Date(f.completed_at).toLocaleDateString()}
+                            </span>
+                            <button className="btn btn-secondary" title="Clear Completion" style={{ width: 'auto', padding: '0.2rem' }} onClick={() => handleClearCompletion(f.id)}>
+                              <RefreshCw size={14} />
+                            </button>
+                          </span>
+                        ) : (
+                          <button className="btn btn-secondary" style={{ width: 'auto', padding: '0.15rem 0.4rem', fontSize: '0.75rem' }} onClick={() => handleMarkCompleted(f.id)}>
+                            Mark Completed
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

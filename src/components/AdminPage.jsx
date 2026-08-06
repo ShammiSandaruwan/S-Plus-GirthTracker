@@ -1476,7 +1476,7 @@ export default function AdminPage() {
 
       const headers = [
         'Estate Name', 'Division', 'Field No', 'Extent', 'YOP',
-        'Up keep Year (1st/2nd)', 'Date of Girth Census',
+        'Up keep Year (1st/2nd)', 'Census Completed Date',
         'Less than 4"', '4" - 7.9"', '8" - 9.9"', '10" - 11.9"',
         '12" - 13.9"', '14" - 15.9"', '16" - 17.9"', '18" - 19.9"',
         '20" or more', 'Total Plants', 'SPH', 'Above 20" Tree %'
@@ -2068,7 +2068,7 @@ export default function AdminPage() {
                       <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>Extent</th>
                       <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'center', whiteSpace: 'nowrap' }}>YOP</th>
                       <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'center', whiteSpace: 'nowrap' }}>Up keep Year (1st/2nd)</th>
-                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'center', whiteSpace: 'nowrap' }}>Date of Girth Census</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'center', whiteSpace: 'nowrap' }}>Census Completed Date</th>
                       <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>Less than 4"</th>
                       <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>4" - 7.9"</th>
                       <th style={{ padding: '0.5rem', border: '1px solid #7092be', textAlign: 'right', whiteSpace: 'nowrap' }}>8" - 9.9"</th>
