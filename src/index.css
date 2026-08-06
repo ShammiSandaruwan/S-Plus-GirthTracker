@@ -1318,3 +1318,52 @@ body.admin-route #root {
     align-items: flex-start;
   }
 }
+
+/* --- Abnormal Trees Modal & Clickable Stat Box --- */
+.stat-box-clickable {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.stat-box-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(156, 39, 176, 0.25);
+  border-color: rgba(156, 39, 176, 0.4);
+}
+
+.stat-box-clickable:active {
+  transform: translateY(0);
+}
+
+@keyframes abnormalModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.abnormal-row {
+  transition: background 0.15s ease;
+}
+
+.abnormal-row:hover {
+  background: rgba(156, 39, 176, 0.06);
+}
+
+@media (max-width: 600px) {
+  .abnormal-modal {
+    padding: 1rem !important;
+    max-width: 100% !important;
+    border-radius: 8px !important;
+  }
+
+  .abnormal-table th,
+  .abnormal-table td {
+    padding: 0.35rem 0.4rem !important;
+    font-size: 0.75rem !important;
+  }
+}

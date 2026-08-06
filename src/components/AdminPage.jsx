@@ -1030,6 +1030,223 @@ function QRCodesTab({ estates, divisions, fields }) {
 }
 
 // ----------------------------------------------------
+// Abnormal Trees Modal
+// ----------------------------------------------------
+function AbnormalTreesModal({ measurements, estates, divisions, fields, onClose }) {
+  const [search, setSearch] = useState('');
+
+  const abnormalMeasurements = useMemo(() => {
+    const isAbn = (m) =>
+      m.abnormalFlag === true || m.abnormalFlag === 1 ||
+      m.abnormalFlag === 'Yes' || m.abnormalFlag === 'true';
+    return measurements.filter(m => isAbn(m));
+  }, [measurements]);
+
+  // Enrich each abnormal measurement with resolved Estate, Division, Field, Extent, YOP
+  const enrichedRows = useMemo(() => {
+    return abnormalMeasurements.map(m => {
+      // Try to resolve field from field_id or fieldId
+      const fId = m.field_id || m.fieldId;
+      const matchedField = fId ? fields.find(f => f.id === fId) : null;
+
+      // Resolve estate/division from matched field, or from measurement string fields
+      let estateName = m.estate || '-';
+      let divisionName = m.division || '-';
+      let fieldNo = m.fieldNo || '-';
+      let extent = m.extent != null ? m.extent : '-';
+      let yop = '-';
+
+      if (matchedField) {
+        fieldNo = matchedField.field_code || fieldNo;
+        extent = matchedField.extent_ha != null ? matchedField.extent_ha : extent;
+        const yopRaw = matchedField.yop;
+        if (yopRaw !== null && yopRaw !== undefined && yopRaw !== '' && !isNaN(Number(yopRaw))) {
+          yop = Number(yopRaw);
+        }
+
+        const matchedDiv = divisions.find(d => d.id === matchedField.division_id);
+        if (matchedDiv) divisionName = matchedDiv.name || divisionName;
+
+        const matchedEstate = estates.find(e => e.id === matchedField.estate_id);
+        if (matchedEstate) estateName = matchedEstate.name || estateName;
+      }
+
+      const dateStr = m.date || (m.timestamp ? new Date(m.timestamp).toLocaleDateString() : '-');
+      const girth = m.girth != null ? `${m.girth}"` : '-';
+      const reason = m.abnormalReason || (m.treeCondition === 'runt' ? 'Runt' : 'Abnormal Reading');
+
+      return {
+        id: m.id,
+        estate: estateName,
+        division: divisionName,
+        fieldNo,
+        extent,
+        yop,
+        treeNo: m.treeNo ?? '-',
+        girth,
+        reason,
+        date: dateStr,
+      };
+    });
+  }, [abnormalMeasurements, estates, divisions, fields]);
+
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return enrichedRows;
+    const q = search.toLowerCase().trim();
+    return enrichedRows.filter(r =>
+      String(r.estate).toLowerCase().includes(q) ||
+      String(r.division).toLowerCase().includes(q) ||
+      String(r.fieldNo).toLowerCase().includes(q) ||
+      String(r.treeNo).toLowerCase().includes(q)
+    );
+  }, [enrichedRows, search]);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backdropFilter: 'blur(6px)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem'
+      }}
+    >
+      <div
+        className="glass-card abnormal-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: '900px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '1.5rem',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-color)',
+          background: 'var(--bg-card, rgba(20, 24, 33, 0.98))',
+          animation: 'abnormalModalIn 0.25s ease-out'
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <AlertTriangle size={20} color="#9c27b0" /> Abnormal Trees
+            </h3>
+            <div className="text-muted" style={{ fontSize: '0.82rem', marginTop: '0.25rem' }}>
+              {enrichedRows.length} abnormal {enrichedRows.length === 1 ? 'tree' : 'trees'} identified
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            title="Close"
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: 'none',
+              borderRadius: '50%',
+              color: 'var(--text-color)',
+              cursor: 'pointer',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.2s',
+              fontSize: '1.1rem',
+              fontWeight: 'bold'
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Search */}
+        <div style={{ marginBottom: '0.75rem' }}>
+          <input
+            type="text"
+            placeholder="Search by estate, division, field or tree no..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '0.5rem 0.75rem',
+              fontSize: '0.85rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-secondary, rgba(0,0,0,0.2))',
+              color: 'var(--text-color)',
+              outline: 'none'
+            }}
+          />
+        </div>
+
+        {/* Scrollable Table */}
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
+          {filteredRows.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              {search ? 'No abnormal trees match your search.' : 'No abnormal trees found.'}
+            </div>
+          ) : (
+            <table className="abnormal-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.82rem' }}>
+              <thead>
+                <tr style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(156, 39, 176, 0.15)' }}>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'left', whiteSpace: 'nowrap' }}>Estate</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'left', whiteSpace: 'nowrap' }}>Divi</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'left', whiteSpace: 'nowrap' }}>Field No</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'right', whiteSpace: 'nowrap' }}>Extent</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'center', whiteSpace: 'nowrap' }}>YOP</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'center', whiteSpace: 'nowrap' }}>Tree No</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'right', whiteSpace: 'nowrap' }}>Girth</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'left', whiteSpace: 'nowrap' }}>Reason</th>
+                  <th style={{ padding: '0.5rem', border: '1px solid rgba(156, 39, 176, 0.3)', textAlign: 'center', whiteSpace: 'nowrap' }}>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((r, idx) => (
+                  <tr key={r.id || idx} className="abnormal-row" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', whiteSpace: 'nowrap' }}>{r.estate}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', whiteSpace: 'nowrap' }}>{r.division}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.fieldNo}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right' }}>{r.extent}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'center' }}>{r.yop}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'center', fontWeight: 600, color: '#9c27b0' }}>{r.treeNo}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'right', fontWeight: 600 }}>{r.girth}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{r.reason}</td>
+                    <td style={{ padding: '0.45rem 0.5rem', borderBottom: '1px solid var(--border-color)', textAlign: 'center', whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{r.date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer count */}
+        {filteredRows.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem', marginTop: '0.5rem', fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Showing {filteredRows.length} of {enrichedRows.length} abnormal trees</span>
+            {search && <span style={{ color: 'var(--accent-primary)', cursor: 'pointer' }} onClick={() => setSearch('')}>Clear search</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------
 // Main Admin Page
 // ----------------------------------------------------
 export default function AdminPage() {
@@ -1060,6 +1277,7 @@ export default function AdminPage() {
   const mapRef = useRef(null);
 
   const [downloadingExcel, setDownloadingExcel] = useState(false);
+  const [showAbnormalModal, setShowAbnormalModal] = useState(false);
 
   const censusSummaryData = useMemo(() => {
     if (!measurements || measurements.length === 0) {
@@ -1783,9 +2001,17 @@ export default function AdminPage() {
               <div className="text-muted" style={{ color: '#f44336' }}>Below</div>
               <div className="stat-value" style={{ color: '#f44336' }}>{below}</div>
             </div>
-            <div className="stat-box">
+            <div
+              className="stat-box stat-box-clickable"
+              onClick={() => abnormal > 0 && setShowAbnormalModal(true)}
+              title={abnormal > 0 ? 'Click to view abnormal trees' : 'No abnormal trees'}
+              style={{ cursor: abnormal > 0 ? 'pointer' : 'default', position: 'relative' }}
+            >
               <div className="text-muted" style={{ color: '#9c27b0' }}>Abnormal</div>
               <div className="stat-value" style={{ color: '#9c27b0' }}>{abnormal}</div>
+              {abnormal > 0 && (
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>Tap to view</div>
+              )}
             </div>
           </div>
 
@@ -1914,6 +2140,17 @@ export default function AdminPage() {
           measurements={measurements}
           onClose={() => setSelectedFieldForDrilldown(null)}
           onAuthError={handleAuthError}
+        />
+      )}
+
+      {/* Abnormal Trees Modal */}
+      {showAbnormalModal && (
+        <AbnormalTreesModal
+          measurements={measurements}
+          estates={estates}
+          divisions={divisions}
+          fields={fields}
+          onClose={() => setShowAbnormalModal(false)}
         />
       )}
     </div>
