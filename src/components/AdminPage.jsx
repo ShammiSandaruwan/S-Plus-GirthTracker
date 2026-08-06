@@ -1356,12 +1356,24 @@ export default function AdminPage() {
 
       // Count unique tree numbers for Total Plants
       const uniqueTrees = new Set();
+      const uniqueSphTrees = new Set();
+      let sphListCount = 0;
+
       gList.forEach((m) => {
+        const isDeadOrDamaged = ['dead', 'damaged', 'animal_attack'].includes(m.treeCondition);
         if (m.treeNo != null && m.treeNo !== '') {
           uniqueTrees.add(m.treeNo);
+          if (!isDeadOrDamaged) {
+            uniqueSphTrees.add(m.treeNo);
+          }
+        } else {
+          if (!isDeadOrDamaged) {
+            sphListCount++;
+          }
         }
       });
       const totalPlants = uniqueTrees.size > 0 ? uniqueTrees.size : gList.length;
+      const sphPlants = uniqueTrees.size > 0 ? uniqueSphTrees.size : sphListCount;
 
       // Girth distribution bands
       let lessThan4 = 0;
@@ -1388,7 +1400,7 @@ export default function AdminPage() {
         else over20++;
       });
 
-      const sph = extent > 0 ? Math.round(totalPlants / extent) : 0;
+      const sph = extent > 0 ? Math.round(sphPlants / extent) : 0;
       const above20Pct = totalPlants > 0 ? Math.round((over20 / totalPlants) * 100) : 0;
 
       rows.push({
@@ -1410,6 +1422,7 @@ export default function AdminPage() {
         band18to19_9,
         over20,
         totalPlants,
+        sphPlants,
         sph,
         above20Pct,
         targetField: {
@@ -1442,10 +1455,11 @@ export default function AdminPage() {
       band16to17_9: rows.reduce((acc, r) => acc + r.band16to17_9, 0),
       band18to19_9: rows.reduce((acc, r) => acc + r.band18to19_9, 0),
       over20: rows.reduce((acc, r) => acc + r.over20, 0),
-      totalPlants: rows.reduce((acc, r) => acc + r.totalPlants, 0)
+      totalPlants: rows.reduce((acc, r) => acc + r.totalPlants, 0),
+      sphPlants: rows.reduce((acc, r) => acc + r.sphPlants, 0)
     };
 
-    totals.sph = totals.extent > 0 ? Math.round(totals.totalPlants / totals.extent) : 0;
+    totals.sph = totals.extent > 0 ? Math.round(totals.sphPlants / totals.extent) : 0;
     totals.above20Pct = totals.totalPlants > 0 ? Math.round((totals.over20 / totals.totalPlants) * 100) : 0;
 
     return { rows, totals };
