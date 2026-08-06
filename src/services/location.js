@@ -11,6 +11,7 @@ const GPS_REFRESH_INTERVAL = Math.max(
 let watchId = null;
 let refreshTimer = null;
 let lastPosition = null;
+const locationListeners = new Set();
 
 /**
  * Build a standardized location result object.
@@ -83,11 +84,34 @@ export function startBackgroundGPS(onUpdate) {
     const result = await captureGPS();
     if (result.status === 'captured') {
       onUpdate?.(result);
+      locationListeners.forEach(fn => fn(result));
     }
   };
 
   doCapture();
   refreshTimer = setInterval(doCapture, GPS_REFRESH_INTERVAL);
+}
+
+/**
+ * Subscribe to location updates
+ */
+export function onLocationUpdate(fn) {
+  locationListeners.add(fn);
+}
+
+/**
+ * Unsubscribe from location updates
+ */
+export function offLocationUpdate(fn) {
+  locationListeners.delete(fn);
+}
+
+/**
+ * Get the current location synchronously if available
+ */
+export function getCurrentLocation() {
+  if (!lastPosition) return null;
+  return buildLocationResult(lastPosition, 'captured');
 }
 
 /**
