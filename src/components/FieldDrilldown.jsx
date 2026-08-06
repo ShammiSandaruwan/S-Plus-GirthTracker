@@ -377,22 +377,23 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
                       <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
                         <th style={{ textAlign: 'left', padding: '0.5rem', width: '3rem' }}>#</th>
                         <th style={{ textAlign: 'left', padding: '0.5rem' }}>Tree No</th>
-                        <th style={{ textAlign: 'left', padding: '0.5rem' }}>Reason</th>
+                        <th style={{ textAlign: 'left', padding: '0.5rem' }}>Condition</th>
+                        <th style={{ textAlign: 'left', padding: '0.5rem' }}>Note</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.map((m, i) => {
-                        const rawReason = m.reason || m.conditionNote || m.abnormalReason;
-                        const isPureNumber = rawReason && !isNaN(Number(String(rawReason).trim()));
-                        const finalReason = (!rawReason || String(rawReason).trim() === '' || isPureNumber) 
+                        const condStr = (m.treeCondition || 'healthy').replace('_', ' ');
+                        const finalNote = (!m.conditionNote || String(m.conditionNote).trim() === '') 
                           ? 'No reason recorded' 
-                          : rawReason;
+                          : m.conditionNote;
                           
                         return (
                           <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
                             <td style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>{i + 1}</td>
                             <td style={{ padding: '0.5rem' }}>{m.treeNo ?? '-'}</td>
-                            <td style={{ padding: '0.5rem' }}>{finalReason}</td>
+                            <td style={{ padding: '0.5rem', textTransform: 'capitalize' }}>{condStr}</td>
+                            <td style={{ padding: '0.5rem' }}>{finalNote}</td>
                           </tr>
                         );
                       })}

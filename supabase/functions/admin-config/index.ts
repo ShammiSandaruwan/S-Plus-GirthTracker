@@ -741,7 +741,7 @@ async function getFieldTreeReport(db: any, body: any) {
       const toIndex = (page + 1) * PAGE_SIZE - 1;
       const { data, error: linkedErr } = await db
         .from('census_measurements')
-        .select('tree_no, girth, tree_condition, condition_note, abnormal_reason')
+        .select('tree_no, girth, tree_condition, condition_note')
         .eq('field_id', fieldRow.id)
         .range(fromIndex, toIndex);
 
@@ -771,7 +771,7 @@ async function getFieldTreeReport(db: any, body: any) {
       const toIndex = (page + 1) * PAGE_SIZE - 1;
       const { data, error: legacyErr } = await db
         .from('census_measurements')
-        .select('tree_no, girth, tree_condition, condition_note, abnormal_reason, estate, division, field_no, field_id')
+        .select('tree_no, girth, tree_condition, condition_note, estate, division, field_no, field_id')
         .ilike('field_no', searchCode)
         .range(fromIndex, toIndex);
 
@@ -851,7 +851,7 @@ async function getFieldTreeReport(db: any, body: any) {
     treeNo: r.tree_no,
     girth: r.girth,
     treeCondition: r.tree_condition,
-    reason: r.condition_note || r.abnormal_reason || null
+    conditionNote: r.condition_note || null
   }));
 
   return respond({
