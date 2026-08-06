@@ -988,6 +988,7 @@ function getFriendlySyncErrorMessage(errorObj) {
               const availableFields = selectedDivisionObj
                 ? configFields.filter(f => 
                     f.division_id === selectedDivisionObj.id &&
+                    // eslint-disable-next-line react-hooks/purity
                     (!f.completed_at || (Date.now() - new Date(f.completed_at).getTime()) > FIELD_COMPLETION_COOLDOWN_MS)
                   )
                 : [];

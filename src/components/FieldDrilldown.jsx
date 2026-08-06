@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { BarChart3, X, RefreshCw, AlertTriangle, Activity, Database, CheckCircle2 } from 'lucide-react';
 
 export default function FieldDrilldown({ token, field, measurements, onClose, onAuthError }) {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
 
   const [selectedCondition, setSelectedCondition] = useState(null);
 
@@ -120,7 +121,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
     
     fetchReport();
     return () => { ignore = true; };
-  }, [field, token, onAuthError, clientFallback]);
+  }, [field, token, onAuthError, clientFallback, retryCount]);
 
   if (!field) return null;
 
@@ -232,7 +233,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
             </div>
             <button
               className="btn btn-secondary"
-              onClick={loadReport}
+              onClick={() => setRetryCount(c => c + 1)}
               style={{ width: 'auto', padding: '0.3rem 0.75rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <RefreshCw size={14} /> Retry
