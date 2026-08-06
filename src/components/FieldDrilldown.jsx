@@ -3,6 +3,7 @@ import { BarChart3, X, RefreshCw, AlertTriangle, Activity, Database, CheckCircle
 
 export default function FieldDrilldown({ token, field, measurements, onClose, onAuthError }) {
   const [reportData, setReportData] = useState(null);
+  const [fullMeasurements, setFullMeasurements] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -24,6 +25,8 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       return fMatch && eMatch && dMatch;
     });
   }, [field, measurements]);
+
+  const displayMeasurements = fullMeasurements || matchingMeasurements;
 
   const clientFallback = useMemo(() => {
     if (matchingMeasurements.length === 0) return null;
@@ -49,7 +52,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
 
     const healthStats = { healthy: 0, runt: 0, dead: 0, damaged: 0 };
     rows.forEach(r => {
-      const cond = r.treeCondition || 'healthy';
+      const cond = (r.treeCondition || 'healthy').toLowerCase();
       if (cond === 'runt') healthStats.runt++;
       else if (cond === 'dead') healthStats.dead++;
       else if (cond === 'damaged' || cond === 'animal_attack') healthStats.damaged++;
@@ -110,33 +113,55 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
   }, [field, token, onAuthError, clientFallback]);
 
   useEffect(() => {
-    let ignore = false;
+    let active = true;
     const fetchReport = async () => {
-      if (!field || !token) return;
+      if (!field) return;
       setLoading(true);
       setError('');
       try {
-        const { adminCRUD } = await import('../services/supabaseSync');
-        const data = await adminCRUD(token, 'field_tree_report', {
-          field_id: field.fieldId,
-          estate: field.estateName,
-          division: field.divisionName,
-          fieldNo: field.fieldCode
-        });
-        if (!ignore) {
-          setReportData(data);
+        const { adminCRUD, fetchAdminMeasurements } = await import('../services/supabaseSync');
+        const fId = field.id || field.fieldId;
+        
+        // Fetch report counts and full measurements concurrently
+        const fetchPromises = [
+          adminCRUD(token, 'field_tree_report', {
+            field_id: fId,
+            estate: field.estateName,
+            division: field.divisionName,
+            fieldNo: field.fieldCode,
+          }).catch(e => {
+            console.warn('field_tree_report error:', e);
+            return null;
+          })
+        ];
+
+        // Only fetch full measurements if fId is available since we need a reliable way to query backend
+        if (fId) {
+          fetchPromises.push(
+            fetchAdminMeasurements(token, {
+              field_id: fId,
+              status: 'all' // Override any status filters to get ALL trees
+            }).catch(e => {
+              console.warn('fetchAdminMeasurements error:', e);
+              return null;
+            })
+          );
         }
-      } catch (err) {
-        if (!ignore) {
-          if (err.message && err.message.includes('Invalid or expired')) {
-            onAuthError(err.message);
-          } else if (!clientFallback) {
-            setError("Couldn't load field details from server.");
+
+        const [reportDataRes, measDataRes] = await Promise.all(fetchPromises);
+        
+        if (active) {
+          if (reportDataRes && reportDataRes.success) {
+            setReportData(reportDataRes);
+          }
+          if (measDataRes && measDataRes.success) {
+            setFullMeasurements(measDataRes.measurements);
           }
         }
+      } catch (err) {
+        if (active) setError(err.message || 'Failed to load report data');
+        if (err.message?.includes('session')) onAuthError?.(err.message);
       } finally {
-        if (!ignore) {
-          setLoading(false);
         }
       }
     };
@@ -387,13 +412,13 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
             </div>
             <div style={{ padding: '1rem', overflowY: 'auto' }}>
               {(() => {
-                const filtered = matchingMeasurements.filter(m => {
+                const filtered = displayMeasurements.filter(m => {
                   const cond = (m.treeCondition || 'healthy').toLowerCase();
                   if (selectedCondition === 'damaged') return cond === 'damaged' || cond === 'animal_attack';
                   return cond === selectedCondition;
                 });
                 
-                if (filtered.length === 0) return <div style={{ color: 'var(--text-muted)' }}>No {selectedCondition} trees found in current filter.</div>;
+                if (filtered.length === 0) return <div style={{ color: 'var(--text-muted)' }}>No {selectedCondition} trees found in current dataset.</div>;
                 
                 return (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
