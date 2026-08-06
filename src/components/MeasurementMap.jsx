@@ -20,21 +20,21 @@ function getStatus(m) {
 }
 
 function isAbnormal(m) {
-  return m.abnormalFlag === true || 
-         m.abnormalFlag === 1 || 
-         String(m.abnormalFlag).toLowerCase() === 'true' || 
-         String(m.abnormalFlag).toLowerCase() === 'yes';
+  return m.abnormalFlag === true ||
+    m.abnormalFlag === 1 ||
+    String(m.abnormalFlag).toLowerCase() === 'true' ||
+    String(m.abnormalFlag).toLowerCase() === 'yes';
 }
 
 function getMarkerColor(m) {
   if (isAbnormal(m)) return '#9c27b0'; // purple
-  
+
   const status = getStatus(m);
   // Order matters: 'approaching' before 'tappable' if status has both (unlikely but safe)
   if (status.includes('approaching')) return '#ff9800'; // orange
   if (status.includes('tappable')) return '#4caf50'; // green
   if (status.includes('not_ready') || status.includes('below') || status.includes('not ready')) return '#f44336'; // red
-  
+
   return '#2196f3'; // default blue
 }
 
@@ -71,11 +71,11 @@ function FitBounds({ points }) {
 
       if (bounds.isValid()) {
         if (points.length === 1) {
-          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 18);
+          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 16);
         } else {
           map.fitBounds(bounds, {
             padding: [24, 24],
-            maxZoom: 18
+            maxZoom: 16
           });
         }
       }
@@ -99,23 +99,23 @@ function MapControls({ points }) {
 
       if (bounds.isValid()) {
         if (points.length === 1) {
-          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 18);
+          map.setView([parseFloat(points[0].latitude), parseFloat(points[0].longitude)], 16);
         } else {
           map.fitBounds(bounds, {
             padding: [24, 24],
-            maxZoom: 18
+            maxZoom: 16
           });
         }
       }
     } catch (e) {
-       console.warn('Error re-centering:', e);
+      console.warn('Error re-centering:', e);
     }
   };
 
   return (
-    <button 
-      type="button" 
-      className="btn btn-secondary map-recenter-btn" 
+    <button
+      type="button"
+      className="btn btn-secondary map-recenter-btn"
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); recenter(); }}
       style={{
         position: 'absolute',
@@ -147,7 +147,7 @@ function MapLegend() {
       <div className="map-legend-item"><span className="map-legend-dot approaching"></span> Approaching</div>
       <div className="map-legend-item"><span className="map-legend-dot below"></span> Below threshold</div>
       <div className="map-legend-item"><span className="map-legend-dot abnormal"></span> Abnormal</div>
-      <div className="map-legend-item"><span className="map-legend-dot unknown"></span> Unknown</div>
+      <div className="map-legend-item"><span className="map-legend-dot unknown"></span> Dead</div>
     </div>
   );
 }
@@ -165,12 +165,12 @@ function MapResizeObserver() {
   return null;
 }
 
-export default function MeasurementMap({ 
-  measurements = [], 
-  filter = 'all', 
-  showAccuracy = false, 
+export default function MeasurementMap({
+  measurements = [],
+  filter = 'all',
+  showAccuracy = false,
   height = '300px',
-  adminMode = false 
+  adminMode = false
 }) {
   const [validUserLocation, setValidUserLocation] = useState(null);
 
@@ -180,7 +180,7 @@ export default function MeasurementMap({
     if (loc && loc.latitude && loc.longitude) {
       setValidUserLocation(loc);
     }
-    
+
     const handleLocation = (newLoc) => {
       if (newLoc && newLoc.latitude && newLoc.longitude) {
         setValidUserLocation(newLoc);
@@ -192,9 +192,9 @@ export default function MeasurementMap({
   }, []);
 
   const gpsMeasurements = useMemo(() => {
-    return measurements.filter(m => 
-      m.latitude && m.longitude && 
-      !isNaN(parseFloat(m.latitude)) && 
+    return measurements.filter(m =>
+      m.latitude && m.longitude &&
+      !isNaN(parseFloat(m.latitude)) &&
       !isNaN(parseFloat(m.longitude))
     );
   }, [measurements]);
@@ -203,7 +203,7 @@ export default function MeasurementMap({
     return gpsMeasurements.filter(m => {
       if (filter === 'all') return true;
       if (filter === 'abnormal') return isAbnormal(m);
-      
+
       const status = getStatus(m);
       if (filter === 'tappable') return status.includes('tappable') && !status.includes('approaching');
       if (filter === 'approaching') return status.includes('approaching');
@@ -238,176 +238,176 @@ export default function MeasurementMap({
         <span>Cluster numbers show grouped nearby trees. Zoom in or tap a cluster to expand.</span>
       </div>
       <div style={{ height, width: '100%', position: 'relative', borderRadius: '8px', overflow: 'hidden', zIndex: 1 }}>
-      <MapContainer 
-        center={defaultCenter} 
-        zoom={16} 
-        style={{ height: '100%', width: '100%' }}
-        preferCanvas={true}
-      >
-        <MapResizeObserver />
-        <FitBounds points={filteredMeasurements} />
-        <MapControls points={filteredMeasurements} />
-        <MapLegend />
-        
-        <LayersControl position="topright">
-          <LayersControl.BaseLayer 
-            name="OpenStreetMap" 
-            checked={(() => {
-              try { return localStorage.getItem('girth_tracker_map_layer') !== 'satellite'; } 
-              catch { return true; }
-            })()}
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; OpenStreetMap contributors'
-              maxNativeZoom={18}
-              maxZoom={21}
-              eventHandlers={{
-                add: () => {
-                  try { localStorage.setItem('girth_tracker_map_layer', 'osm'); } catch (err) {}
-                }
-              }}
-            />
-          </LayersControl.BaseLayer>
+        <MapContainer
+          center={defaultCenter}
+          zoom={16}
+          style={{ height: '100%', width: '100%' }}
+          preferCanvas={true}
+        >
+          <MapResizeObserver />
+          <FitBounds points={filteredMeasurements} />
+          <MapControls points={filteredMeasurements} />
+          <MapLegend />
 
-          <LayersControl.BaseLayer 
-            name="Satellite (Esri)" 
-            checked={(() => {
-              try { return localStorage.getItem('girth_tracker_map_layer') === 'satellite'; } 
-              catch { return false; }
-            })()}
-          >
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution='Imagery &copy; Esri &mdash; Source: Esri'
-              maxNativeZoom={18}
-              maxZoom={21}
-              eventHandlers={{
-                add: () => {
-                  try { localStorage.setItem('girth_tracker_map_layer', 'satellite'); } catch (err) {}
-                }
-              }}
-            />
-          </LayersControl.BaseLayer>
-        </LayersControl>
-
-        {/* User Location Marker */}
-        {validUserLocation && (
-          <>
-            <Marker
-              position={[validUserLocation.latitude, validUserLocation.longitude]}
-              icon={createUserLocationIcon()}
-              zIndexOffset={1000}
+          <LayersControl position="topright">
+            <LayersControl.BaseLayer
+              name="OpenStreetMap"
+              checked={(() => {
+                try { return localStorage.getItem('girth_tracker_map_layer') !== 'satellite'; }
+                catch { return true; }
+              })()}
             >
-              <Popup>
-                <div style={{ fontSize: '0.85rem' }}>
-                  <strong>My Location</strong><br/>
-                  Accuracy: ±{validUserLocation.accuracy ? `${validUserLocation.accuracy.toFixed(1)}m` : 'N/A'}
-                </div>
-              </Popup>
-            </Marker>
-
-            {validUserLocation.accuracy && validUserLocation.accuracy > 0 && (
-              <Circle
-                center={[validUserLocation.latitude, validUserLocation.longitude]}
-                radius={validUserLocation.accuracy}
-                pathOptions={{
-                  color: '#2196f3',
-                  fillColor: '#2196f3',
-                  weight: 1,
-                  opacity: 0.4,
-                  fillOpacity: 0.15
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; OpenStreetMap contributors'
+                maxNativeZoom={18}
+                maxZoom={21}
+                eventHandlers={{
+                  add: () => {
+                    try { localStorage.setItem('girth_tracker_map_layer', 'osm'); } catch (err) { }
+                  }
                 }}
               />
-            )}
-          </>
-        )}
+            </LayersControl.BaseLayer>
 
-        {showAccuracy && filteredMeasurements.map((m, i) => {
-          const acc = parseFloat(m.gpsAccuracy);
-          if (isNaN(acc) || acc <= 0) return null;
-          
-          return (
-            <Circle
-              key={`acc-${m.id || m.treeNo || i}`}
-              center={[parseFloat(m.latitude), parseFloat(m.longitude)]}
-              radius={acc}
-              pathOptions={{
-                color: getMarkerColor(m),
-                fillColor: getMarkerColor(m),
-                weight: 1,
-                opacity: 0.3,
-                fillOpacity: 0.1
-              }}
-            />
-          );
-        })}
+            <LayersControl.BaseLayer
+              name="Satellite (Esri)"
+              checked={(() => {
+                try { return localStorage.getItem('girth_tracker_map_layer') === 'satellite'; }
+                catch { return false; }
+              })()}
+            >
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                attribution='Imagery &copy; Esri &mdash; Source: Esri'
+                maxNativeZoom={18}
+                maxZoom={21}
+                eventHandlers={{
+                  add: () => {
+                    try { localStorage.setItem('girth_tracker_map_layer', 'satellite'); } catch (err) { }
+                  }
+                }}
+              />
+            </LayersControl.BaseLayer>
+          </LayersControl>
 
-        <MarkerClusterGroup 
-          chunkedLoading 
-          maxClusterRadius={40}
-        >
-          {filteredMeasurements.map((m, i) => {
-            const mLat = parseFloat(m.latitude);
-            const mLng = parseFloat(m.longitude);
-            
-            let distToTree = null;
-            if (validUserLocation) {
-              try {
-                distToTree = L.latLng(validUserLocation.latitude, validUserLocation.longitude)
-                  .distanceTo(L.latLng(mLat, mLng));
-              } catch (err) { }
-            }
-
-            return (
+          {/* User Location Marker */}
+          {validUserLocation && (
+            <>
               <Marker
-                key={m.id || `${m.treeNo}-${i}`}
-                position={[mLat, mLng]}
-                icon={createDivIcon(m)}
+                position={[validUserLocation.latitude, validUserLocation.longitude]}
+                icon={createUserLocationIcon()}
+                zIndexOffset={1000}
               >
                 <Popup>
-                  <div style={{ fontSize: '0.9rem', minWidth: '150px' }}>
-                    <strong>Tree: {m.treeNo}</strong><br/>
-                    Girth: {m.girth}&quot;<br/>
-                    Date: {m.date || (m.timestamp ? new Date(m.timestamp).toLocaleDateString() : 'Unknown')}<br/>
-                    Status: {m.recommendationText || m.recommendationStatus || 'N/A'}<br/>
-                    
-                    {isAbnormal(m) && (
-                      <div style={{ color: '#9c27b0', fontWeight: 'bold', marginTop: '4px' }}>
-                        ⚠️ {adminMode ? (m.abnormalReason || 'Abnormal Reading') : 'Abnormal Reading'}
-                      </div>
-                    )}
-                    
-                    {distToTree !== null && (
-                      <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)', fontSize: '0.8rem' }}>
-                        <div><strong>Distance:</strong> {distToTree < 1000 ? `${distToTree.toFixed(1)} m` : `${(distToTree / 1000).toFixed(2)} km`}</div>
-                        {validUserLocation?.accuracy && validUserLocation.accuracy > distToTree && (
-                          <div style={{ color: '#ff9800', fontSize: '0.75rem', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                            <AlertTriangle size={12} /> Low GPS confidence
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Tree GPS Acc: {m.gpsAccuracy ? `${m.gpsAccuracy}m` : 'N/A'}
-                      {parseFloat(m.gpsAccuracy) > 30 && <span style={{ color: '#ff9800', display: 'block' }}>Low GPS confidence</span>}
-                    </div>
-                    
-                    {(adminMode && m.googleMapLink) && (
-                      <div style={{ marginTop: '8px' }}>
-                        <a href={m.googleMapLink} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
-                          Open in Google Maps
-                        </a>
-                      </div>
-                    )}
+                  <div style={{ fontSize: '0.85rem' }}>
+                    <strong>My Location</strong><br />
+                    Accuracy: ±{validUserLocation.accuracy ? `${validUserLocation.accuracy.toFixed(1)}m` : 'N/A'}
                   </div>
                 </Popup>
               </Marker>
+
+              {validUserLocation.accuracy && validUserLocation.accuracy > 0 && (
+                <Circle
+                  center={[validUserLocation.latitude, validUserLocation.longitude]}
+                  radius={validUserLocation.accuracy}
+                  pathOptions={{
+                    color: '#2196f3',
+                    fillColor: '#2196f3',
+                    weight: 1,
+                    opacity: 0.4,
+                    fillOpacity: 0.15
+                  }}
+                />
+              )}
+            </>
+          )}
+
+          {showAccuracy && filteredMeasurements.map((m, i) => {
+            const acc = parseFloat(m.gpsAccuracy);
+            if (isNaN(acc) || acc <= 0) return null;
+
+            return (
+              <Circle
+                key={`acc-${m.id || m.treeNo || i}`}
+                center={[parseFloat(m.latitude), parseFloat(m.longitude)]}
+                radius={acc}
+                pathOptions={{
+                  color: getMarkerColor(m),
+                  fillColor: getMarkerColor(m),
+                  weight: 1,
+                  opacity: 0.3,
+                  fillOpacity: 0.1
+                }}
+              />
             );
           })}
-        </MarkerClusterGroup>
-      </MapContainer>
+
+          <MarkerClusterGroup
+            chunkedLoading
+            maxClusterRadius={40}
+          >
+            {filteredMeasurements.map((m, i) => {
+              const mLat = parseFloat(m.latitude);
+              const mLng = parseFloat(m.longitude);
+
+              let distToTree = null;
+              if (validUserLocation) {
+                try {
+                  distToTree = L.latLng(validUserLocation.latitude, validUserLocation.longitude)
+                    .distanceTo(L.latLng(mLat, mLng));
+                } catch (err) { }
+              }
+
+              return (
+                <Marker
+                  key={m.id || `${m.treeNo}-${i}`}
+                  position={[mLat, mLng]}
+                  icon={createDivIcon(m)}
+                >
+                  <Popup>
+                    <div style={{ fontSize: '0.9rem', minWidth: '150px' }}>
+                      <strong>Tree: {m.treeNo}</strong><br />
+                      Girth: {m.girth}&quot;<br />
+                      Date: {m.date || (m.timestamp ? new Date(m.timestamp).toLocaleDateString() : 'Unknown')}<br />
+                      Status: {m.recommendationText || m.recommendationStatus || 'N/A'}<br />
+
+                      {isAbnormal(m) && (
+                        <div style={{ color: '#9c27b0', fontWeight: 'bold', marginTop: '4px' }}>
+                          ⚠️ {adminMode ? (m.abnormalReason || 'Abnormal Reading') : 'Abnormal Reading'}
+                        </div>
+                      )}
+
+                      {distToTree !== null && (
+                        <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)', fontSize: '0.8rem' }}>
+                          <div><strong>Distance:</strong> {distToTree < 1000 ? `${distToTree.toFixed(1)} m` : `${(distToTree / 1000).toFixed(2)} km`}</div>
+                          {validUserLocation?.accuracy && validUserLocation.accuracy > distToTree && (
+                            <div style={{ color: '#ff9800', fontSize: '0.75rem', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                              <AlertTriangle size={12} /> Low GPS confidence
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Tree GPS Acc: {m.gpsAccuracy ? `${m.gpsAccuracy}m` : 'N/A'}
+                        {parseFloat(m.gpsAccuracy) > 30 && <span style={{ color: '#ff9800', display: 'block' }}>Low GPS confidence</span>}
+                      </div>
+
+                      {(adminMode && m.googleMapLink) && (
+                        <div style={{ marginTop: '8px' }}>
+                          <a href={m.googleMapLink} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
+                            Open in Google Maps
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+          </MarkerClusterGroup>
+        </MapContainer>
       </div>
     </>
   );
