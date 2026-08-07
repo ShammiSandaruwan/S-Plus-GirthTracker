@@ -8,7 +8,7 @@ import SessionReport from './components/SessionReport';
 import FieldInsightsModal from './components/FieldInsightsModal';
 import { startBackgroundGPS, stopBackgroundGPS, getLastKnownLocation } from './services/location';
 import { girthToCm, getRecommendation } from './services/recommendation';
-import { checkAbnormal } from './services/analytics';
+import { checkAbnormal, findNewlySkippedTreeNumbers } from './services/analytics';
 import { syncToSupabase, undoFromSupabase, checkDuplicateInDexie, deviceHeartbeat } from './services/supabaseSync';
 import { SUPABASE_URL } from './services/supabaseClient';
 import AdminPage from './components/AdminPage';
@@ -180,6 +180,7 @@ function TrackerApp({ approvedData }) {
   const [syncError, setSyncError] = useState('');
   const [authError, setAuthError] = useState('');
   const [abnormalWarning, setAbnormalWarning] = useState('');
+  const [gapWarning, setGapWarning] = useState('');
   const [showSessionReport, setShowSessionReport] = useState(false);
   const [showFieldInsights, setShowFieldInsights] = useState(() => shouldOpenInsightsFromUrl());
   const [showNewFieldWizard, setShowNewFieldWizard] = useState(false);
@@ -626,6 +627,26 @@ function getFriendlySyncErrorMessage(errorObj) {
       await db.measurements.add(measurementPayload);
     }
 
+    // Local, field-scoped gap check — device-local only, see constraints above
+    const allLocal = await db.measurements.toArray();
+    const fieldLocalTreeNos = allLocal
+      .filter(m => fieldId
+        ? m.fieldId === fieldId
+        : (m.estate === currentSettings.estate && m.division === currentSettings.division &&
+           m.fieldNo === currentSettings.fieldNo && parseFloat(m.extent) === parseFloat(currentSettings.extent)))
+      .map(m => parseInt(m.treeNo))
+      .filter(n => !isNaN(n));
+
+    const skippedNumbers = findNewlySkippedTreeNumbers(fieldLocalTreeNos, parseInt(currentSettings.treeNo));
+    if (skippedNumbers.length > 0) {
+      const label = skippedNumbers.length === 1
+        ? `Tree #${skippedNumbers[0]}`
+        : `Trees #${skippedNumbers.join(', #')}`;
+      setGapWarning(`${label} skipped — go back and measure before leaving this field.`);
+      if (currentSettings.audioConfirmationEnabled) playBeep('error');
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 100]); // distinct pattern from the success buzz
+    }
+
     if ('vibrate' in navigator) navigator.vibrate([100]);
     if (currentSettings.audioConfirmationEnabled) playBeep('success');
     setSuccessFlash(true);
@@ -921,6 +942,24 @@ function getFriendlySyncErrorMessage(errorObj) {
     [settings.sessionId]
   ) || 0;
 
+  const fieldGapCount = useLiveQuery(async () => {
+    if (!settings.fieldId && !settings.fieldNo) return 0;
+    const allLocal = await db.measurements.toArray();
+    const nums = allLocal
+      .filter(m => settings.fieldId
+        ? m.fieldId === settings.fieldId
+        : (m.estate === settings.estate && m.division === settings.division &&
+           m.fieldNo === settings.fieldNo && parseFloat(m.extent) === parseFloat(settings.extent)))
+      .map(m => parseInt(m.treeNo))
+      .filter(n => !isNaN(n));
+    if (nums.length === 0) return 0;
+    const min = Math.min(...nums), max = Math.max(...nums);
+    const present = new Set(nums);
+    let count = 0;
+    for (let n = min; n <= max; n++) if (!present.has(n)) count++;
+    return count;
+  }, [settings.fieldId, settings.estate, settings.division, settings.fieldNo, settings.extent]) || 0;
+
   const retryFailed = useCallback(async () => {
     const current = settingsRef.current;
     if (current.sessionId) {
@@ -1189,6 +1228,13 @@ function getFriendlySyncErrorMessage(errorObj) {
          </div>
       )}
 
+      {gapWarning && (
+        <div className="warning-banner" style={{background: 'rgba(239, 68, 68, 0.15)', borderColor: 'var(--accent-danger)', color: 'var(--accent-danger)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+          <span><AlertTriangle size={16} style={{verticalAlign: 'middle', marginRight: '0.4rem'}} /> {gapWarning}</span>
+          <button onClick={() => setGapWarning('')} style={{background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer'}}>✕</button>
+        </div>
+      )}
+
       {saveSummaryToast && (
         <div className="warning-banner" style={{background: 'rgba(34, 197, 94, 0.15)', borderColor: '#22c55e', color: '#22c55e'}}>
           ✓ {saveSummaryToast}
@@ -1338,6 +1384,16 @@ function getFriendlySyncErrorMessage(errorObj) {
           <div className="text-muted">Synced</div>
           <div className="stat-value">{syncedCount}</div>
         </div>
+        {fieldGapCount > 0 && (
+          <div className="stat-box" style={{cursor: 'default', background: 'rgba(239, 68, 68, 0.05)'}}>
+            <div className="text-muted" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.2rem', color: 'var(--accent-danger)'}}>
+              <AlertTriangle size={14} /> Gaps
+            </div>
+            <div className="stat-value" style={{color: 'var(--accent-danger)'}}>
+              ⚠ {fieldGapCount}
+            </div>
+          </div>
+        )}
         {failedCount > 0 && (
           <div className="stat-box" onClick={retryFailed} style={{cursor: 'pointer', gridColumn: '1 / -1'}}>
             <div className="text-muted" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.2rem'}}>
