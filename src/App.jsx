@@ -942,8 +942,8 @@ function getFriendlySyncErrorMessage(errorObj) {
     [settings.sessionId]
   ) || 0;
 
-  const fieldGapCount = useLiveQuery(async () => {
-    if (!settings.fieldId && !settings.fieldNo) return 0;
+  const fieldGaps = useLiveQuery(async () => {
+    if (!settings.fieldId && !settings.fieldNo) return [];
     const allLocal = await db.measurements.toArray();
     const nums = allLocal
       .filter(m => settings.fieldId
@@ -952,13 +952,13 @@ function getFriendlySyncErrorMessage(errorObj) {
            m.fieldNo === settings.fieldNo && parseFloat(m.extent) === parseFloat(settings.extent)))
       .map(m => parseInt(m.treeNo))
       .filter(n => !isNaN(n));
-    if (nums.length === 0) return 0;
+    if (nums.length === 0) return [];
     const min = Math.min(...nums), max = Math.max(...nums);
     const present = new Set(nums);
-    let count = 0;
-    for (let n = min; n <= max; n++) if (!present.has(n)) count++;
-    return count;
-  }, [settings.fieldId, settings.estate, settings.division, settings.fieldNo, settings.extent]) || 0;
+    const missing = [];
+    for (let n = min; n <= max; n++) if (!present.has(n)) missing.push(n);
+    return missing;
+  }, [settings.fieldId, settings.estate, settings.division, settings.fieldNo, settings.extent]) || [];
 
   const retryFailed = useCallback(async () => {
     const current = settingsRef.current;
@@ -1384,13 +1384,13 @@ function getFriendlySyncErrorMessage(errorObj) {
           <div className="text-muted">Synced</div>
           <div className="stat-value">{syncedCount}</div>
         </div>
-        {fieldGapCount > 0 && (
-          <div className="stat-box" style={{cursor: 'default', background: 'rgba(239, 68, 68, 0.05)'}}>
+        {fieldGaps.length > 0 && (
+          <div className="stat-box" style={{cursor: 'default', background: 'rgba(239, 68, 68, 0.15)'}}>
             <div className="text-muted" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.2rem', color: 'var(--accent-danger)'}}>
-              <AlertTriangle size={14} /> Gaps
+              <AlertTriangle size={14} /> Missing Tree No
             </div>
-            <div className="stat-value" style={{color: 'var(--accent-danger)'}}>
-              ⚠ {fieldGapCount}
+            <div className="stat-value" style={{color: 'var(--accent-danger)', fontSize: '1.1rem', marginTop: '0.4rem'}}>
+              [{fieldGaps.slice(0, 3).join(', ')}{fieldGaps.length > 3 ? '...' : ''}]
             </div>
           </div>
         )}
