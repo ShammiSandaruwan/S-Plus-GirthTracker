@@ -175,7 +175,7 @@ function buildDistribution(values) {
 
 export function findNewlySkippedTreeNumbers(existingTreeNumbers, justSavedTreeNo) {
   const priorNumbers = existingTreeNumbers.filter(n => n !== justSavedTreeNo);
-  if (priorNumbers.length === 0) return []; // first tree recorded locally for this field — no baseline
+  if (priorNumbers.length === 0) return []; // first tree recorded locally for this field - no baseline
   const priorMax = Math.max(...priorNumbers);
   if (justSavedTreeNo <= priorMax + 1) return []; // no gap created
   const skipped = [];

@@ -245,6 +245,6 @@ export async function deviceHeartbeat(deviceId, deviceToken) {
       body: JSON.stringify({ t: Date.now() })
     });
   } catch {
-    // Heartbeat failures are non-critical — silently ignore
+    // Heartbeat failures are non-critical - silently ignore
   }
 }

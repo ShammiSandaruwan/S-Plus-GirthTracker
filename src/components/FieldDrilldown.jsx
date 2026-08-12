@@ -195,7 +195,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
               <BarChart3 size={20} color="var(--accent-primary)" /> Field Details
             </h3>
             <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              {field.estateName || '-'} / {field.divisionName || '-'} — <strong style={{ color: 'var(--text-color)' }}>Field {field.fieldCode}</strong>
+              {field.estateName || '-'} / {field.divisionName || '-'} - <strong style={{ color: 'var(--text-color)' }}>Field {field.fieldCode}</strong>
             </div>
           </div>
           <button

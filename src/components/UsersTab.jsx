@@ -123,7 +123,7 @@ export default function UsersTab({ token, onAuthError }) {
         setEstates(data.estates || []);
       }
     } catch {
-      // Non-critical — form will just lack estate options
+      // Non-critical - form will just lack estate options
     }
   }, [token]);
 
@@ -481,9 +481,9 @@ export default function UsersTab({ token, onAuthError }) {
                   }}
                   style={{ fontSize: '0.9rem' }}
                 >
-                  <option value="superadmin">SuperAdmin — All estates, full access</option>
-                  <option value="admin">Admin — Multiple estates, view-only</option>
-                  <option value="manager">Manager — Single estate, view-only</option>
+                  <option value="superadmin">SuperAdmin - All estates, full access</option>
+                  <option value="admin">Admin - Multiple estates, view-only</option>
+                  <option value="manager">Manager - Single estate, view-only</option>
                 </select>
               </div>
 

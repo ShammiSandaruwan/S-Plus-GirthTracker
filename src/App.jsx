@@ -486,7 +486,7 @@ function getFriendlySyncErrorMessage(errorObj) {
     return () => clearInterval(interval);
   }, [isOnline, pendingCountForSync, syncPending]);
 
-  // Device heartbeat — keeps last_seen_at fresh for admin online status
+  // Device heartbeat - keeps last_seen_at fresh for admin online status
   useEffect(() => {
     if (!isSetupComplete || !isOnline) return;
     const currentSettings = settingsRef.current;
@@ -627,7 +627,7 @@ function getFriendlySyncErrorMessage(errorObj) {
       await db.measurements.add(measurementPayload);
     }
 
-    // Local, field-scoped gap check — device-local only, see constraints above
+    // Local, field-scoped gap check - device-local only, see constraints above
     const allLocal = await db.measurements.toArray();
     const fieldLocalTreeNos = allLocal
       .filter(m => fieldId
@@ -642,7 +642,7 @@ function getFriendlySyncErrorMessage(errorObj) {
       const label = skippedNumbers.length === 1
         ? `Tree #${skippedNumbers[0]}`
         : `Trees #${skippedNumbers.join(', #')}`;
-      setGapWarning(`${label} skipped — go back and measure before leaving this field.`);
+      setGapWarning(`${label} skipped - go back and measure before leaving this field.`);
       if (currentSettings.audioConfirmationEnabled) playBeep('error');
       if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 100]); // distinct pattern from the success buzz
     }

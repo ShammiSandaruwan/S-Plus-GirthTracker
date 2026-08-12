@@ -790,7 +790,7 @@ function DevicesTab({ token, onAuthError }) {
                     <td style={{ padding: '0.5rem', fontWeight: 500 }}>{d.operatorName || '-'}</td>
                     <td style={{ padding: '0.5rem' }}>{d.estate || '-'}</td>
                     <td style={{ padding: '0.5rem', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
-                      {(d.deviceIdHash || '').substring(0, 12)}…
+                      {(d.deviceIdHash || '').substring(0, 12)}...
                     </td>
                     <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
                       <div>{timeAgo(d.lastSeenAt)}</div>
@@ -2207,7 +2207,7 @@ export default function AdminPage() {
         <QRCodesTab estates={estates} divisions={divisions} fields={fields} />
       )}
 
-      {/* Users Tab (SuperAdmin only — double-gated) */}
+      {/* Users Tab (SuperAdmin only - double-gated) */}
       {activeTab === 'users' && myRole === 'superadmin' && (
         <UsersTab token={token} onAuthError={handleAuthError} />
       )}
