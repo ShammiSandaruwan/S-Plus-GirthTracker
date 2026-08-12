@@ -42,7 +42,8 @@ serve(async (req) => {
     // Default-deny allowlist for non-superadmin roles.
     // Any new action is automatically SuperAdmin-only unless explicitly added here.
     const SCOPED_READ_ACTIONS = new Set([
-      'list_estates', 'list_divisions', 'list_fields', 'get_summary', 'field_tree_report', 'whoami'
+      'list_estates', 'list_divisions', 'list_fields', 'get_summary', 'field_tree_report', 'whoami',
+      'list_devices', 'list_pending_requests'
     ]);
 
     if (callerRole !== 'superadmin' && !SCOPED_READ_ACTIONS.has(action)) {
@@ -98,7 +99,7 @@ serve(async (req) => {
 
       // === DEVICES ===
       case 'list_devices':
-        return await listDevices(supabaseAdmin);
+        return await listDevices(supabaseAdmin, callerRole, callerEstateIds);
       case 'revoke_device':
         return await revokeDevice(supabaseAdmin, body);
       case 'delete_device':
@@ -110,7 +111,7 @@ serve(async (req) => {
 
       // === PENDING REQUESTS ===
       case 'list_pending_requests':
-        return await listPendingRequests(supabaseAdmin);
+        return await listPendingRequests(supabaseAdmin, callerRole, callerEstateIds);
 
       // === MIGRATION ===
       case 'migrate_devices':
@@ -414,10 +415,20 @@ async function validateSheetMapping(db: any, body: any) {
 
 // ======================== DEVICES ========================
 
-async function listDevices(db: any) {
-  const { data, error } = await db.from('approved_devices')
-    .select('*')
+async function listDevices(db: any, callerRole: string, callerEstateIds: string[]) {
+  if (callerRole !== 'superadmin' && callerEstateIds.length === 0) {
+    return respond({ success: true, devices: [] });
+  }
+
+  let query = db.from('approved_devices')
+    .select('id, device_id_hash, operator_name, estate_id, estate_code, approved_at, last_seen_at, last_sync_at, revoked, revoked_at')
     .order('approved_at', { ascending: false });
+
+  if (callerRole !== 'superadmin') {
+    query = query.in('estate_id', callerEstateIds);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return respond({ success: true, devices: data });
 }
@@ -710,27 +721,35 @@ async function getSummary(db: any, body: any, callerRole: string, callerEstateId
 
 // ======================== PENDING REQUESTS ========================
 
-async function listPendingRequests(db: any) {
-  const { data, error } = await db
+async function listPendingRequests(db: any, callerRole: string, callerEstateIds: string[]) {
+  if (callerRole !== 'superadmin' && callerEstateIds.length === 0) {
+    return respond({ success: true, requests: [] });
+  }
+
+  let query = db
     .from('access_requests')
-    .select('*')
+    .select('id, request_id, device_id_hash, operator_name, estate_id, estate_code, requested_at, status, user_agent, app_version')
     .eq('status', 'pending')
     .order('requested_at', { ascending: false });
 
+  if (callerRole !== 'superadmin') {
+    query = query.in('estate_id', callerEstateIds);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
 
   return respond({
     success: true,
     requests: (data || []).map((r: any) => ({
+      id: r.id,
       request_id: r.request_id,
+      estate_id: r.estate_id,
       estate_code: r.estate_code,
       operator_name: r.operator_name,
       device_id_hash: r.device_id_hash,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      gps_accuracy: r.gps_accuracy,
-      google_map_link: r.google_map_link,
       requested_at: r.requested_at,
+      status: r.status,
       user_agent: r.user_agent,
       app_version: r.app_version,
     })),

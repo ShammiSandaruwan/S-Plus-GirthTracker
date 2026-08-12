@@ -301,12 +301,14 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
 // ----------------------------------------------------
 // Pending Requests Section (inside DevicesTab)
 // ----------------------------------------------------
-function PendingRequestsSection({ token, onAuthError }) {
+function PendingRequestsSection({ token, myRole, onAuthError }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actioning, setActioning] = useState(null);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  
+  const canManageDevices = myRole === 'superadmin';
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -408,7 +410,7 @@ function PendingRequestsSection({ token, onAuthError }) {
                     <th style={{ padding: '0.5rem', textAlign: 'left' }}>Device</th>
                     <th style={{ padding: '0.5rem', textAlign: 'left' }}>Location</th>
                     <th style={{ padding: '0.5rem', textAlign: 'left' }}>Requested</th>
-                    <th style={{ padding: '0.5rem', textAlign: 'center' }}>Actions</th>
+                    {canManageDevices && <th style={{ padding: '0.5rem', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -425,26 +427,28 @@ function PendingRequestsSection({ token, onAuthError }) {
                         ) : '-'}
                       </td>
                       <td style={{ padding: '0.5rem', fontSize: '0.78rem' }}>{formatDate(r.requested_at)}</td>
-                      <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center' }}>
-                          <button
-                            className="btn"
-                            onClick={() => handleAction(r.request_id, 'approve')}
-                            disabled={!!actioning}
-                            style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.75rem', background: 'var(--success)', color: '#fff', minHeight: '36px' }}
-                          >
-                            {actioning === r.request_id + ':approve' ? <RefreshCw className="pulse" size={12} /> : <CheckCircle2 size={12} />} Approve
-                          </button>
-                          <button
-                            className="btn btn-danger"
-                            onClick={() => handleAction(r.request_id, 'deny')}
-                            disabled={!!actioning}
-                            style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.75rem', minHeight: '36px' }}
-                          >
-                            {actioning === r.request_id + ':deny' ? <RefreshCw className="pulse" size={12} /> : <XCircle size={12} />} Deny
-                          </button>
-                        </div>
-                      </td>
+                      {canManageDevices && (
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center' }}>
+                            <button
+                              className="btn"
+                              onClick={() => handleAction(r.request_id, 'approve')}
+                              disabled={!!actioning}
+                              style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.75rem', background: 'var(--success)', color: '#fff', minHeight: '36px' }}
+                            >
+                              {actioning === r.request_id + ':approve' ? <RefreshCw className="pulse" size={12} /> : <CheckCircle2 size={12} />} Approve
+                            </button>
+                            <button
+                              className="btn btn-danger"
+                              onClick={() => handleAction(r.request_id, 'deny')}
+                              disabled={!!actioning}
+                              style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.75rem', minHeight: '36px' }}
+                            >
+                              {actioning === r.request_id + ':deny' ? <RefreshCw className="pulse" size={12} /> : <XCircle size={12} />} Deny
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -471,24 +475,26 @@ function PendingRequestsSection({ token, onAuthError }) {
                     <a href={r.google_map_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.78rem', color: 'var(--accent-primary)' }}>View Location</a>
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <button
-                    className="btn"
-                    onClick={() => handleAction(r.request_id, 'approve')}
-                    disabled={!!actioning}
-                    style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', background: 'var(--success)', color: '#fff', minHeight: '44px' }}
-                  >
-                    {actioning === r.request_id + ':approve' ? <RefreshCw className="pulse" size={14} /> : <CheckCircle2 size={14} />} Approve
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    onClick={() => handleAction(r.request_id, 'deny')}
-                    disabled={!!actioning}
-                    style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', minHeight: '44px' }}
-                  >
-                    {actioning === r.request_id + ':deny' ? <RefreshCw className="pulse" size={14} /> : <XCircle size={14} />} Deny
-                  </button>
-                </div>
+                {canManageDevices && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <button
+                      className="btn"
+                      onClick={() => handleAction(r.request_id, 'approve')}
+                      disabled={!!actioning}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', background: 'var(--success)', color: '#fff', minHeight: '44px' }}
+                    >
+                      {actioning === r.request_id + ':approve' ? <RefreshCw className="pulse" size={14} /> : <CheckCircle2 size={14} />} Approve
+                    </button>
+                    <button
+                      className="btn btn-danger"
+                      onClick={() => handleAction(r.request_id, 'deny')}
+                      disabled={!!actioning}
+                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.8rem', minHeight: '44px' }}
+                    >
+                      {actioning === r.request_id + ':deny' ? <RefreshCw className="pulse" size={14} /> : <XCircle size={14} />} Deny
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -548,7 +554,7 @@ function timeAgo(dateStr) {
   return `${days}d ago`;
 }
 
-function DevicesTab({ token, onAuthError }) {
+function DevicesTab({ token, myRole, onAuthError }) {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [revoking, setRevoking] = useState(null);
@@ -556,6 +562,8 @@ function DevicesTab({ token, onAuthError }) {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const autoRefreshRef = useRef(null);
+
+  const canManageDevices = myRole === 'superadmin';
 
   const fetchDevices = useCallback(async () => {
     setLoading(true);
@@ -743,23 +751,25 @@ function DevicesTab({ token, onAuthError }) {
           <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Shield size={18} color="#4caf50" /> Active Devices ({activeDevices.length})
           </h3>
-          <div style={{display: 'flex', gap: '0.5rem'}}>
-            <button className="btn btn-secondary" onClick={async () => {
-              if(!confirm('Migrate devices from GAS?')) return;
-              setLoading(true);
-              const { adminCRUD } = await import('../services/supabaseSync');
-              const res = await adminCRUD(token, 'migrate_devices', { adminToken: token });
-              if (res.success) {
-                 alert(`Migration complete.\nInserted: ${res.report.inserted}\nSkipped: ${res.report.skipped}\nConflicts: ${res.report.conflicts.length}\nErrors: ${res.report.errors.length}`);
-                 loadDevices();
-              } else {
-                 alert('Migration failed: ' + res.error);
-              }
-              setLoading(false);
-            }} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
-              Migrate GAS Devices
-            </button>
-          </div>
+          {canManageDevices && (
+            <div style={{display: 'flex', gap: '0.5rem'}}>
+              <button className="btn btn-secondary" onClick={async () => {
+                if(!confirm('Migrate devices from GAS?')) return;
+                setLoading(true);
+                const { adminCRUD } = await import('../services/supabaseSync');
+                const res = await adminCRUD(token, 'migrate_devices', { adminToken: token });
+                if (res.success) {
+                   alert(`Migration complete.\nInserted: ${res.report.inserted}\nSkipped: ${res.report.skipped}\nConflicts: ${res.report.conflicts.length}\nErrors: ${res.report.errors.length}`);
+                   loadDevices();
+                } else {
+                   alert('Migration failed: ' + res.error);
+                }
+                setLoading(false);
+              }} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+                Migrate GAS Devices
+              </button>
+            </div>
+          )}
         </div>
 
         {loading && devices.length === 0 ? (
@@ -778,7 +788,7 @@ function DevicesTab({ token, onAuthError }) {
                   <th style={{ padding: '0.5rem', textAlign: 'left' }}>Estate</th>
                   <th style={{ padding: '0.5rem', textAlign: 'left' }}>Device ID</th>
                   <th style={{ padding: '0.5rem', textAlign: 'left' }}>Last Seen</th>
-                  <th style={{ padding: '0.5rem', textAlign: 'center' }}>Action</th>
+                  {canManageDevices && <th style={{ padding: '0.5rem', textAlign: 'center' }}>Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -796,17 +806,19 @@ function DevicesTab({ token, onAuthError }) {
                       <div>{timeAgo(d.lastSeenAt)}</div>
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{formatDate(d.lastSeenAt)}</div>
                     </td>
-                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                      <button
-                        className="btn btn-danger"
-                        onClick={() => revokeDevice(d.deviceIdHash)}
-                        disabled={revoking === d.deviceIdHash}
-                        style={{ width: 'auto', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-                      >
-                        {revoking === d.deviceIdHash ? <RefreshCw className="pulse" size={12} /> : <ShieldOff size={12} />}
-                        {revoking === d.deviceIdHash ? '' : ' Revoke'}
-                      </button>
-                    </td>
+                    {canManageDevices && (
+                      <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                        <button
+                          className="btn btn-danger"
+                          onClick={() => revokeDevice(d.deviceIdHash)}
+                          disabled={revoking === d.deviceIdHash}
+                          style={{ width: 'auto', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                        >
+                          {revoking === d.deviceIdHash ? <RefreshCw className="pulse" size={12} /> : <ShieldOff size={12} />}
+                          {revoking === d.deviceIdHash ? '' : ' Revoke'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -827,7 +839,7 @@ function DevicesTab({ token, onAuthError }) {
                   <th style={{ padding: '0.4rem' }}>Operator</th>
                   <th style={{ padding: '0.4rem' }}>Estate</th>
                   <th style={{ padding: '0.4rem' }}>Status</th>
-                  <th style={{ padding: '0.4rem', textAlign: 'center' }}>Actions</th>
+                  {canManageDevices && <th style={{ padding: '0.4rem', textAlign: 'center' }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -836,17 +848,19 @@ function DevicesTab({ token, onAuthError }) {
                     <td style={{ padding: '0.4rem' }}>{d.operatorName || '-'}</td>
                     <td style={{ padding: '0.4rem' }}>{d.estate || '-'}</td>
                     <td style={{ padding: '0.4rem', color: '#f44336' }}>Revoked</td>
-                    <td style={{ padding: '0.4rem', textAlign: 'center' }}>
-                      <button
-                        className="btn btn-danger"
-                        onClick={() => deleteDevice(d.deviceIdHash)}
-                        disabled={deleting === d.deviceIdHash}
-                        style={{ width: 'auto', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-                      >
-                        {deleting === d.deviceIdHash ? <RefreshCw className="pulse" size={12} /> : <Trash2 size={12} />}
-                        {deleting === d.deviceIdHash ? '' : ' Delete'}
-                      </button>
-                    </td>
+                    {canManageDevices && (
+                      <td style={{ padding: '0.4rem', textAlign: 'center' }}>
+                        <button
+                          className="btn btn-danger"
+                          onClick={() => deleteDevice(d.deviceIdHash)}
+                          disabled={deleting === d.deviceIdHash}
+                          style={{ width: 'auto', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                        >
+                          {deleting === d.deviceIdHash ? <RefreshCw className="pulse" size={12} /> : <Trash2 size={12} />}
+                          {deleting === d.deviceIdHash ? '' : ' Delete'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1764,7 +1778,7 @@ export default function AdminPage() {
     if (!myRole) return;
     const permittedTabs = myRole === 'superadmin'
       ? VALID_TABS
-      : ['overview', 'measurements'];
+      : ['overview', 'measurements', 'devices', 'qrcodes'];
     if (!permittedTabs.includes(activeTab)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveTab('overview');
@@ -1923,7 +1937,7 @@ export default function AdminPage() {
 
   const tabs = myRole === 'superadmin'
     ? ALL_TABS
-    : ALL_TABS.filter(t => ['overview', 'measurements'].includes(t.id));
+    : ALL_TABS.filter(t => ['overview', 'measurements', 'devices', 'qrcodes'].includes(t.id));
 
   return (
     <div className="admin-page">
@@ -2192,8 +2206,13 @@ export default function AdminPage() {
       {/* Devices Tab */}
       {activeTab === 'devices' && (
         <>
-          <PendingRequestsSection token={token} onAuthError={handleAuthError} />
-          <DevicesTab token={token} onAuthError={handleAuthError} />
+          {myRole !== 'superadmin' && (
+            <div className="warning-banner" style={{ background: 'rgba(23, 118, 210, 0.1)', color: '#1776d2', borderColor: '#1776d2', marginBottom: '1rem' }}>
+              <AlertTriangle size={16} /> Admins and Managers can view devices and pending requests only within their assigned estates. Only SuperAdmins can approve, deny, revoke, delete, or migrate devices.
+            </div>
+          )}
+          <PendingRequestsSection token={token} myRole={myRole} onAuthError={handleAuthError} />
+          <DevicesTab token={token} myRole={myRole} onAuthError={handleAuthError} />
         </>
       )}
       

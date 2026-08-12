@@ -139,6 +139,7 @@ CREATE TABLE access_requests (
   id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   request_id      TEXT NOT NULL UNIQUE,
   estate_code     TEXT NOT NULL,
+  estate_id       UUID REFERENCES estates(id),
   operator_name   TEXT NOT NULL,
   device_id_hash  TEXT NOT NULL,
   user_agent      TEXT,

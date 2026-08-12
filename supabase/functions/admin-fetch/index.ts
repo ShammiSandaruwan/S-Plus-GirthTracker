@@ -34,7 +34,7 @@ serve(async (req) => {
       });
     }
     const callerRole = auth.role!;
-    const callerEstateNames = auth.estateNames!;
+    const callerEstateCodes = auth.estateCodes!;
 
     const PAGE_SIZE = 1000;
 
@@ -69,10 +69,24 @@ serve(async (req) => {
         .from('census_measurements')
         .select('*');
 
+      if (callerRole !== 'superadmin') {
+        query = query.in('estate', callerEstateCodes);
+      }
+
       if (estateValues && estateValues.length > 0) {
-        query = query.in('estate', estateValues);
+        // If they provided a filter, ensure it doesn't bypass their allowed codes
+        if (callerRole !== 'superadmin') {
+          const allowedFilterValues = estateValues.filter(v => callerEstateCodes.includes(v));
+          query = query.in('estate', allowedFilterValues.length > 0 ? allowedFilterValues : ['_FORCE_EMPTY_RESULT_']);
+        } else {
+          query = query.in('estate', estateValues);
+        }
       } else if (estate && estate !== 'all') {
-        query = query.eq('estate', estate);
+        if (callerRole !== 'superadmin' && !callerEstateCodes.includes(estate)) {
+          query = query.in('estate', ['_FORCE_EMPTY_RESULT_']);
+        } else {
+          query = query.eq('estate', estate);
+        }
       }
 
       if (divValues && divValues.length > 0) {
@@ -107,7 +121,7 @@ serve(async (req) => {
 
     // Mandatory estate scope for non-superadmin callers
     if (callerRole !== 'superadmin') {
-      if (callerEstateNames.length === 0) {
+      if (callerEstateCodes.length === 0) {
         return new Response(JSON.stringify({ success: true, measurements: [] }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
@@ -121,13 +135,7 @@ serve(async (req) => {
     while (hasMore) {
       const fromIndex = page * PAGE_SIZE;
       const toIndex = (page + 1) * PAGE_SIZE - 1;
-      const { data, error: dbError } = await (() => {
-        let q = buildQuery().range(fromIndex, toIndex);
-        if (callerRole !== 'superadmin') {
-          q = q.in('estate', callerEstateNames);
-        }
-        return q;
-      })();
+      const { data, error: dbError } = await buildQuery().range(fromIndex, toIndex);
 
       if (dbError) {
         throw new Error(`Failed to fetch data: ${dbError.message}`);
