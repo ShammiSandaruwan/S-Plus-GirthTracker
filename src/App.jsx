@@ -80,7 +80,7 @@ function App() {
     return <AdminPage />;
   }
 
-  if (window.location.pathname === '/complete-invite') {
+  if (window.location.pathname.startsWith('/complete-invite')) {
     return <SetPassword />;
   }
 
