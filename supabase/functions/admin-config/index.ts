@@ -52,13 +52,22 @@ serve(async (req) => {
 
     switch (action) {
       // === WHOAMI ===
-      case 'whoami':
+      case 'whoami': {
+        const { data: superAdmins } = await supabaseAdmin
+          .from('admin_users')
+          .select('name')
+          .eq('role', 'superadmin')
+          .eq('active', true)
+          .order('created_at', { ascending: true });
+
         return respond({
           success: true,
           role: callerRole,
           estateIds: callerEstateIds,
-          estateNames: auth.estateNames
+          estateNames: auth.estateNames,
+          superAdmins: superAdmins?.map((sa: any) => sa.name).filter(Boolean) || []
         });
+      }
       // === ESTATES ===
       case 'list_estates':
         return await listEstates(supabaseAdmin, body, callerRole, callerEstateIds);

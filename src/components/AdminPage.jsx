@@ -1276,6 +1276,7 @@ export default function AdminPage() {
   // RBAC state
   const [myRole, setMyRole] = useState(null);
   const [myEstateIds, setMyEstateIds] = useState([]);
+  const [superAdmins, setSuperAdmins] = useState([]);
 
   const VALID_TABS = ['overview', 'measurements', 'devices', 'config', 'qrcodes', 'users'];
 
@@ -1761,6 +1762,7 @@ export default function AdminPage() {
         const data = await adminCRUD(token, 'whoami', {});
         setMyRole(data.role);
         setMyEstateIds(data.estateIds || []);
+        setSuperAdmins(data.superAdmins || []);
       } catch (err) {
         if (err.message && err.message.includes('Invalid or expired')) {
           handleAuthError(err.message);
@@ -2208,7 +2210,7 @@ export default function AdminPage() {
         <>
           {myRole !== 'superadmin' && (
             <div className="warning-banner" style={{ background: 'rgba(23, 118, 210, 0.1)', color: '#1776d2', borderColor: '#1776d2', marginBottom: '1rem' }}>
-              <AlertTriangle size={16} /> Admins and Managers can view devices and pending requests only within their assigned estates. Only SuperAdmins can approve, deny, revoke, delete, or migrate devices.
+              <AlertTriangle size={16} /> Contact {superAdmins.length > 0 ? superAdmins.map(n => `Mr.${n}`).join(' or ') : 'your SuperAdmin'} for device approval.
             </div>
           )}
           <PendingRequestsSection token={token} myRole={myRole} onAuthError={handleAuthError} />
