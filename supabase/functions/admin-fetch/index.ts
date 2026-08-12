@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveAdminAuth } from "../_shared/adminAuth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,38 +21,20 @@ serve(async (req) => {
 
     const authHeader = req.headers.get('Authorization') || req.headers.get('x-admin-token');
     const adminToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '') : null;
-    if (!adminToken) {
-      return new Response(JSON.stringify({ error: 'Missing authorization token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
 
     const { estate, division, fieldNo, estate_id, division_id, field_id, dateFrom, dateTo, status } = await req.json();
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Validate JWT via Supabase Auth
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(adminToken);
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // Validate JWT + resolve role and estate assignments via shared helper
+    const auth = await resolveAdminAuth(supabaseAdmin, adminToken);
+    if (!auth.ok) {
+      return new Response(JSON.stringify({ error: auth.error }), {
+        status: auth.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    // 2. Check if user is in admin_users allowlist
-    const { data: adminUser, error: adminError } = await supabaseAdmin
-      .from('admin_users')
-      .select('id')
-      .eq('auth_uid', user.id)
-      .eq('active', true)
-      .single();
-
-    if (adminError || !adminUser) {
-      return new Response(JSON.stringify({ error: 'Unauthorized: User is not an active admin' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    const callerRole = auth.role!;
+    const callerEstateNames = auth.estateNames!;
 
     const PAGE_SIZE = 1000;
 
@@ -122,6 +105,15 @@ serve(async (req) => {
       return query.order('measured_at', { ascending: false });
     };
 
+    // Mandatory estate scope for non-superadmin callers
+    if (callerRole !== 'superadmin') {
+      if (callerEstateNames.length === 0) {
+        return new Response(JSON.stringify({ success: true, measurements: [] }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
     let measurements: any[] = [];
     let page = 0;
     let hasMore = true;
@@ -129,7 +121,13 @@ serve(async (req) => {
     while (hasMore) {
       const fromIndex = page * PAGE_SIZE;
       const toIndex = (page + 1) * PAGE_SIZE - 1;
-      const { data, error: dbError } = await buildQuery().range(fromIndex, toIndex);
+      const { data, error: dbError } = await (() => {
+        let q = buildQuery().range(fromIndex, toIndex);
+        if (callerRole !== 'superadmin') {
+          q = q.in('estate', callerEstateNames);
+        }
+        return q;
+      })();
 
       if (dbError) {
         throw new Error(`Failed to fetch data: ${dbError.message}`);

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveAdminAuth } from "../_shared/adminAuth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,11 +15,6 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization') || req.headers.get('x-admin-token');
     const adminToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '') : null;
-    if (!adminToken) {
-      return new Response(JSON.stringify({ error: 'Missing authorization token' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -30,39 +26,41 @@ serve(async (req) => {
       return respond({ error: 'Failed to create Supabase client: ' + (err.message || JSON.stringify(err)) }, 500);
     }
 
-    // 1. Validate JWT via Supabase Auth
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(adminToken);
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid or expired admin session' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // Validate JWT + resolve role and estate assignments via shared helper
+    const auth = await resolveAdminAuth(supabaseAdmin, adminToken);
+    if (!auth.ok) {
+      return new Response(JSON.stringify({ error: auth.error }), {
+        status: auth.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    // 2. Check if user is in admin_users allowlist
-    const { data: adminUser, error: adminError } = await supabaseAdmin
-      .from('admin_users')
-      .select('id')
-      .eq('auth_uid', user.id)
-      .eq('active', true)
-      .single();
-
-    if (adminError || !adminUser) {
-      return new Response(JSON.stringify({ 
-        error: 'Unauthorized: User is not an active admin',
-        details: adminError || 'User not found in admin_users table',
-        uid: user.id
-      }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    const callerRole = auth.role!;
+    const callerEstateIds = auth.estateIds!;
 
     const body = await req.json();
     const { action } = body;
 
+    // Default-deny allowlist for non-superadmin roles.
+    // Any new action is automatically SuperAdmin-only unless explicitly added here.
+    const SCOPED_READ_ACTIONS = new Set([
+      'list_estates', 'list_divisions', 'list_fields', 'get_summary', 'field_tree_report', 'whoami'
+    ]);
+
+    if (callerRole !== 'superadmin' && !SCOPED_READ_ACTIONS.has(action)) {
+      return respond({ error: 'Forbidden: insufficient role for this action' }, 403);
+    }
+
     switch (action) {
+      // === WHOAMI ===
+      case 'whoami':
+        return respond({
+          success: true,
+          role: callerRole,
+          estateIds: callerEstateIds,
+          estateNames: auth.estateNames
+        });
       // === ESTATES ===
       case 'list_estates':
-        return await listEstates(supabaseAdmin, body);
+        return await listEstates(supabaseAdmin, body, callerRole, callerEstateIds);
       case 'create_estate':
         return await createEstate(supabaseAdmin, body);
       case 'update_estate':
@@ -70,7 +68,7 @@ serve(async (req) => {
 
       // === DIVISIONS ===
       case 'list_divisions':
-        return await listDivisions(supabaseAdmin, body);
+        return await listDivisions(supabaseAdmin, body, callerRole, callerEstateIds);
       case 'create_division':
         return await createDivision(supabaseAdmin, body);
       case 'update_division':
@@ -78,7 +76,7 @@ serve(async (req) => {
 
       // === FIELDS ===
       case 'list_fields':
-        return await listFields(supabaseAdmin, body);
+        return await listFields(supabaseAdmin, body, callerRole, callerEstateIds);
       case 'create_field':
         return await createField(supabaseAdmin, body);
       case 'update_field':
@@ -108,7 +106,7 @@ serve(async (req) => {
 
       // === SUMMARY ===
       case 'get_summary':
-        return await getSummary(supabaseAdmin, body);
+        return await getSummary(supabaseAdmin, body, callerRole, callerEstateIds);
 
       // === PENDING REQUESTS ===
       case 'list_pending_requests':
@@ -122,8 +120,15 @@ serve(async (req) => {
 
       // === FIELD TREE REPORT ===
       case 'field_tree_report':
-        return await getFieldTreeReport(supabaseAdmin, body);
+        return await getFieldTreeReport(supabaseAdmin, body, callerRole, callerEstateIds);
 
+      // === USER MANAGEMENT (SuperAdmin only — not in SCOPED_READ_ACTIONS) ===
+      case 'list_admin_users':
+        return await listAdminUsers(supabaseAdmin);
+      case 'invite_admin_user':
+        return await inviteAdminUser(supabaseAdmin, body);
+      case 'update_admin_user':
+        return await updateAdminUser(supabaseAdmin, body);
 
       default:
         return respond({ error: 'Unknown action' }, 400);
@@ -145,9 +150,10 @@ function respond(data: any, status = 200) {
 
 // ======================== ESTATES ========================
 
-async function listEstates(db: any, body: any) {
-  const query = db.from('estates').select('*').order('name');
-  if (!body.includeInactive) query.eq('active', true);
+async function listEstates(db: any, body: any, callerRole: string, callerEstateIds: string[]) {
+  let query = db.from('estates').select('*').order('name');
+  if (!body.includeInactive) query = query.eq('active', true);
+  if (callerRole !== 'superadmin') query = query.in('id', callerEstateIds);
   const { data, error } = await query;
   if (error) throw error;
   return respond({ success: true, estates: data });
@@ -178,10 +184,11 @@ async function updateEstate(db: any, body: any) {
 
 // ======================== DIVISIONS ========================
 
-async function listDivisions(db: any, body: any) {
+async function listDivisions(db: any, body: any, callerRole: string, callerEstateIds: string[]) {
   let query = db.from('divisions').select('*, estates(code, name)').order('name');
   if (body.estateId) query = query.eq('estate_id', body.estateId);
   if (!body.includeInactive) query = query.eq('active', true);
+  if (callerRole !== 'superadmin') query = query.in('estate_id', callerEstateIds);
   const { data, error } = await query;
   if (error) throw error;
   return respond({ success: true, divisions: data });
@@ -213,7 +220,7 @@ async function updateDivision(db: any, body: any) {
 
 // ======================== FIELDS ========================
 
-async function listFields(db: any, body: any) {
+async function listFields(db: any, body: any, callerRole: string, callerEstateIds: string[]) {
   let query = db.from('fields')
     .select('*, estates(code, name), divisions(code, name)')
     .order('field_code');
@@ -222,6 +229,7 @@ async function listFields(db: any, body: any) {
   if (divisionId) query = query.eq('division_id', divisionId);
   if (estateId) query = query.eq('estate_id', estateId);
   if (!body.includeInactive) query = query.eq('active', true);
+  if (callerRole !== 'superadmin') query = query.in('estate_id', callerEstateIds);
   const { data, error } = await query;
   if (error) throw error;
   return respond({ success: true, fields: data });
@@ -611,14 +619,25 @@ async function backfillFieldIds(db: any, body: any) {
 
 // ======================== SUMMARY ========================
 
-async function getSummary(db: any, body: any) {
+async function getSummary(db: any, body: any, callerRole: string, callerEstateIds: string[]) {
   // 1. Get all estates, divisions, fields (extent_ha column)
-  const { data: allEstates, error: estErr } = await db.from('estates').select('id, code, name, active').order('name');
-  const { data: allDivisions, error: divErr } = await db.from('divisions').select('id, code, name, active, estate_id').order('name');
-  const { data: allFields, error: fldErr } = await db.from('fields').select('id, field_code, active, division_id, estate_id, extent_ha').order('field_code');
+  const { data: rawEstates, error: estErr } = await db.from('estates').select('id, code, name, active').order('name');
+  const { data: rawDivisions, error: divErr } = await db.from('divisions').select('id, code, name, active, estate_id').order('name');
+  const { data: rawFields, error: fldErr } = await db.from('fields').select('id, field_code, active, division_id, estate_id, extent_ha').order('field_code');
 
-  if (!allEstates || !allDivisions || !allFields) {
+  if (!rawEstates || !rawDivisions || !rawFields) {
     return respond({ error: 'Failed to load configuration data', details: { estErr, divErr, fldErr } }, 500);
+  }
+
+  // Scope to caller's assigned estates
+  let allEstates = rawEstates;
+  let allDivisions = rawDivisions;
+  let allFields = rawFields;
+  if (callerRole !== 'superadmin') {
+    const estateIdSet = new Set(callerEstateIds);
+    allEstates = rawEstates.filter((e: any) => estateIdSet.has(e.id));
+    allDivisions = rawDivisions.filter((d: any) => estateIdSet.has(d.estate_id));
+    allFields = rawFields.filter((f: any) => estateIdSet.has(f.estate_id));
   }
 
   // 2. Get aggregate counts from census_measurements using the new v2 RPC
@@ -720,7 +739,7 @@ async function listPendingRequests(db: any) {
 
 // ======================== FIELD TREE REPORT ========================
 
-async function getFieldTreeReport(db: any, body: any) {
+async function getFieldTreeReport(db: any, body: any, callerRole: string, callerEstateIds: string[]) {
   const { field_id, estate, division, fieldNo, field_code } = body;
   const targetFieldCode = fieldNo || field_code;
 
@@ -732,7 +751,7 @@ async function getFieldTreeReport(db: any, body: any) {
   if (field_id) {
     const { data: fData } = await db
       .from('fields')
-      .select('id, field_code, extent_ha, estates(code, name), divisions(code, name)')
+      .select('id, field_code, extent_ha, estate_id, estates(code, name), divisions(code, name)')
       .eq('id', field_id)
       .maybeSingle();
     if (fData) fieldRow = fData;
@@ -742,7 +761,7 @@ async function getFieldTreeReport(db: any, body: any) {
   if (!fieldRow && targetFieldCode) {
     const { data: candidates } = await db
       .from('fields')
-      .select('id, field_code, extent_ha, estates(code, name), divisions(code, name)')
+      .select('id, field_code, extent_ha, estate_id, estates(code, name), divisions(code, name)')
       .ilike('field_code', targetFieldCode.trim());
 
     if (candidates && candidates.length > 0) {
@@ -758,6 +777,11 @@ async function getFieldTreeReport(db: any, body: any) {
         return eMatch && dMatch;
       }) || candidates[0];
     }
+  }
+
+  // Estate scope check — block access to fields outside caller's assigned estates
+  if (fieldRow && callerRole !== 'superadmin' && !callerEstateIds.includes(fieldRow.estate_id)) {
+    return respond({ error: 'Forbidden: field is outside your assigned estates' }, 403);
   }
 
   const PAGE_SIZE = 1000;
@@ -897,3 +921,95 @@ async function getFieldTreeReport(db: any, body: any) {
   });
 }
 
+// ======================== USER MANAGEMENT ========================
+
+async function listAdminUsers(db: any) {
+  const { data, error } = await db
+    .from('admin_users')
+    .select('id, email, name, role, active, created_at, admin_user_estates(estate_id, expires_at, estates(code, name))')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return respond({ success: true, users: data });
+}
+
+async function inviteAdminUser(db: any, body: any) {
+  const { email, name, role, estateAssignments } = body;
+  if (!email || !role) return respond({ error: 'email and role are required' }, 400);
+  if (!['superadmin', 'admin', 'manager'].includes(role)) return respond({ error: 'Invalid role' }, 400);
+  if (role === 'manager' && (!estateAssignments || estateAssignments.length !== 1)) {
+    return respond({ error: 'Managers must be assigned exactly one estate' }, 400);
+  }
+  if (role === 'admin' && (!estateAssignments || estateAssignments.length === 0)) {
+    return respond({ error: 'Admins must be assigned at least one estate' }, 400);
+  }
+  const badExpiry = (estateAssignments || []).find((a: any) => a.expiresAt && new Date(a.expiresAt) <= new Date());
+  if (badExpiry) return respond({ error: 'Expiry date must be in the future' }, 400);
+
+  const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(email, {
+    redirectTo: 'https://girth.splussolutions.com/complete-invite'
+  });
+  if (inviteError) {
+    if (inviteError.message?.toLowerCase().includes('already registered')) {
+      return respond({ error: 'A user with this email already exists' }, 409);
+    }
+    return respond({ error: `Failed to send invite: ${inviteError.message}` }, 500);
+  }
+
+  const { data: newAdminUser, error: insertError } = await db
+    .from('admin_users')
+    .insert({ auth_uid: inviteData.user.id, email, name: name || null, role, active: true })
+    .select()
+    .single();
+  if (insertError) throw insertError;
+
+  if (role !== 'superadmin' && estateAssignments?.length) {
+    const rows = estateAssignments.map((a: any) => ({
+      admin_user_id: newAdminUser.id,
+      estate_id: a.estateId,
+      expires_at: a.expiresAt || null
+    }));
+    const { error: assignError } = await db.from('admin_user_estates').insert(rows);
+    if (assignError) throw assignError;
+  }
+
+  return respond({ success: true, user: newAdminUser });
+}
+
+async function updateAdminUser(db: any, body: any) {
+  const { id, role, estateAssignments, active } = body;
+  if (!id) return respond({ error: 'id is required' }, 400);
+
+  const updates: any = {};
+  if (role !== undefined) updates.role = role;
+  if (active !== undefined) updates.active = active;
+
+  if (role === 'manager' && (!estateAssignments || estateAssignments.length !== 1)) {
+    return respond({ error: 'Managers must be assigned exactly one estate' }, 400);
+  }
+  if (role === 'admin' && (!estateAssignments || estateAssignments.length === 0)) {
+    return respond({ error: 'Admins must be assigned at least one estate' }, 400);
+  }
+  const badExpiry = (estateAssignments || []).find((a: any) => a.expiresAt && new Date(a.expiresAt) <= new Date());
+  if (badExpiry) return respond({ error: 'Expiry date must be in the future' }, 400);
+
+  if (Object.keys(updates).length > 0) {
+    const { error: updateError } = await db.from('admin_users').update(updates).eq('id', id);
+    if (updateError) throw updateError;
+  }
+
+  if (estateAssignments !== undefined) {
+    // Replace-all pattern — simplest to reason about for a small assignment list
+    await db.from('admin_user_estates').delete().eq('admin_user_id', id);
+    if (estateAssignments.length > 0) {
+      const rows = estateAssignments.map((a: any) => ({
+        admin_user_id: id,
+        estate_id: a.estateId,
+        expires_at: a.expiresAt || null
+      }));
+      const { error: assignError } = await db.from('admin_user_estates').insert(rows);
+      if (assignError) throw assignError;
+    }
+  }
+
+  return respond({ success: true });
+}

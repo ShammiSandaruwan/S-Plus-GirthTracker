@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle, Smartphone, QrCode, ShieldOff, Shield, Download, BarChart3, CheckCircle2, XCircle, Clock, User, Trash2 } from 'lucide-react';
+import { Lock, Unlock, Map as MapIcon, RefreshCw, LogOut, Database, AlertTriangle, Smartphone, QrCode, ShieldOff, Shield, Download, BarChart3, CheckCircle2, XCircle, Clock, User, Trash2, Users } from 'lucide-react';
 import QRCode from 'qrcode';
 import 'leaflet/dist/leaflet.css';
 
@@ -17,6 +17,7 @@ function isAbnormal(m) {
 import MeasurementMap from './MeasurementMap';
 import AdminConfigTab from './AdminConfigTab';
 import FieldDrilldown from './FieldDrilldown';
+import UsersTab from './UsersTab';
 import { Settings2 } from 'lucide-react';
 
 
@@ -1258,7 +1259,11 @@ export default function AdminPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [authInitialized, setAuthInitialized] = useState(false);
 
-  const VALID_TABS = ['overview', 'measurements', 'devices', 'config', 'qrcodes'];
+  // RBAC state
+  const [myRole, setMyRole] = useState(null);
+  const [myEstateIds, setMyEstateIds] = useState([]);
+
+  const VALID_TABS = ['overview', 'measurements', 'devices', 'config', 'qrcodes', 'users'];
 
   const [activeTab, setActiveTab] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get('tab');
@@ -1734,6 +1739,39 @@ export default function AdminPage() {
     await supabase.auth.signOut();
   }, []);
 
+  // Fetch role once after login/session-restore
+  useEffect(() => {
+    const fetchWhoAmI = async () => {
+      try {
+        const { adminCRUD } = await import('../services/supabaseSync');
+        const data = await adminCRUD(token, 'whoami', {});
+        setMyRole(data.role);
+        setMyEstateIds(data.estateIds || []);
+      } catch (err) {
+        if (err.message && err.message.includes('Invalid or expired')) {
+          handleAuthError(err.message);
+        } else {
+          setError('Failed to determine your access level. Please refresh or contact your SuperAdmin.');
+        }
+      }
+    };
+    if (token && !myRole) fetchWhoAmI();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, myRole]);
+
+  // Re-validate active tab when role resolves
+  useEffect(() => {
+    if (!myRole) return;
+    const permittedTabs = myRole === 'superadmin'
+      ? VALID_TABS
+      : ['overview', 'measurements'];
+    if (!permittedTabs.includes(activeTab)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveTab('overview');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRole]);
+
   const loadData = async () => {
     setLoadingData(true);
     setError('');
@@ -1874,13 +1912,18 @@ export default function AdminPage() {
 
 
 
-  const tabs = [
+  const ALL_TABS = [
     { id: 'overview', label: 'Overview', icon: <BarChart3 size={16} /> },
     { id: 'measurements', label: 'Measurements', icon: <Database size={16} /> },
     { id: 'devices', label: 'Devices', icon: <Smartphone size={16} /> },
     { id: 'config', label: 'Configuration', icon: <Settings2 size={16} /> },
     { id: 'qrcodes', label: 'QR Codes', icon: <QrCode size={16} /> },
+    { id: 'users', label: 'Users', icon: <Users size={16} /> },
   ];
+
+  const tabs = myRole === 'superadmin'
+    ? ALL_TABS
+    : ALL_TABS.filter(t => ['overview', 'measurements'].includes(t.id));
 
   return (
     <div className="admin-page">
@@ -1920,6 +1963,13 @@ export default function AdminPage() {
           </button>
         ))}
       </div>
+
+      {/* Empty-scope warning for Admin/Manager with no assigned estates */}
+      {myRole && myRole !== 'superadmin' && myEstateIds.length === 0 && (
+        <div className="warning-banner" style={{background: 'rgba(245, 158, 11, 0.15)', borderColor: 'var(--accent-pending)', color: 'var(--accent-pending)' }}>
+          <AlertTriangle size={16} /> No estates are assigned to your account yet. Contact your SuperAdmin.
+        </div>
+      )}
 
       {/* Overview Tab */}
       {activeTab === 'overview' && (
@@ -2155,6 +2205,11 @@ export default function AdminPage() {
       {/* QR Codes Tab */}
       {activeTab === 'qrcodes' && (
         <QRCodesTab estates={estates} divisions={divisions} fields={fields} />
+      )}
+
+      {/* Users Tab (SuperAdmin only — double-gated) */}
+      {activeTab === 'users' && myRole === 'superadmin' && (
+        <UsersTab token={token} onAuthError={handleAuthError} />
       )}
 
       {/* Detail Drilldown Panel */}
