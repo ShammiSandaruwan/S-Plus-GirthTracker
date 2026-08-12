@@ -170,7 +170,8 @@ export default function MeasurementMap({
   filter = 'all',
   showAccuracy = false,
   height = '300px',
-  adminMode = false
+  adminMode = false,
+  onSelectMeasurement
 }) {
   const [validUserLocation, setValidUserLocation] = useState(() => {
     const loc = getCurrentLocation();
@@ -363,6 +364,7 @@ export default function MeasurementMap({
                   key={m.id || `${m.treeNo}-${i}`}
                   position={[mLat, mLng]}
                   icon={createDivIcon(m)}
+                  eventHandlers={{ click: () => onSelectMeasurement && onSelectMeasurement(m) }}
                 >
                   <Popup>
                     <div style={{ fontSize: '0.9rem', minWidth: '150px' }}>

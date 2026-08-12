@@ -38,30 +38,48 @@ serve(async (req) => {
 
     const PAGE_SIZE = 1000;
 
-    let estateValues: string[] | null = null;
+    let selectedEstateCode: string | null = null;
     if (estate_id) {
+      if (callerRole !== 'superadmin' && !callerEstateIds.includes(estate_id)) {
+        return new Response(JSON.stringify({ success: true, measurements: [] }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       const { data: estateRow } = await supabaseAdmin
         .from('estates')
-        .select('code, name')
+        .select('code')
         .eq('id', estate_id)
         .maybeSingle();
 
-      if (estateRow) {
-        estateValues = Array.from(new Set([estateRow.code, estateRow.name].filter(Boolean)));
+      if (!estateRow?.code) {
+        return new Response(JSON.stringify({ success: true, measurements: [] }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       }
+      selectedEstateCode = estateRow.code;
+    } else if (estate && estate !== 'all') {
+      if (callerRole !== 'superadmin' && !callerEstateCodes.includes(estate)) {
+        return new Response(JSON.stringify({ success: true, measurements: [] }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      selectedEstateCode = estate;
     }
 
-    let divValues: string[] | null = null;
+    let selectedDivisionCode: string | null = null;
     if (division_id) {
       const { data: divRow } = await supabaseAdmin
         .from('divisions')
-        .select('code, name')
+        .select('code')
         .eq('id', division_id)
         .maybeSingle();
 
-      if (divRow) {
-        divValues = Array.from(new Set([divRow.code, divRow.name].filter(Boolean)));
+      if (divRow?.code) {
+        selectedDivisionCode = divRow.code;
       }
+    } else if (division && division !== 'all') {
+      selectedDivisionCode = division;
     }
 
     const buildQuery = () => {
@@ -73,26 +91,12 @@ serve(async (req) => {
         query = query.in('estate', callerEstateCodes);
       }
 
-      if (estateValues && estateValues.length > 0) {
-        // If they provided a filter, ensure it doesn't bypass their allowed codes
-        if (callerRole !== 'superadmin') {
-          const allowedFilterValues = estateValues.filter(v => callerEstateCodes.includes(v));
-          query = query.in('estate', allowedFilterValues.length > 0 ? allowedFilterValues : ['_FORCE_EMPTY_RESULT_']);
-        } else {
-          query = query.in('estate', estateValues);
-        }
-      } else if (estate && estate !== 'all') {
-        if (callerRole !== 'superadmin' && !callerEstateCodes.includes(estate)) {
-          query = query.in('estate', ['_FORCE_EMPTY_RESULT_']);
-        } else {
-          query = query.eq('estate', estate);
-        }
+      if (selectedEstateCode) {
+        query = query.eq('estate', selectedEstateCode);
       }
 
-      if (divValues && divValues.length > 0) {
-        query = query.in('division', divValues);
-      } else if (division && division !== 'all') {
-        query = query.eq('division', division);
+      if (selectedDivisionCode) {
+        query = query.eq('division', selectedDivisionCode);
       }
 
       if (field_id) {

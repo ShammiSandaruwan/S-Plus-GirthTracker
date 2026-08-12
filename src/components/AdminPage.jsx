@@ -21,7 +21,7 @@ import UsersTab from './UsersTab';
 import { Settings2 } from 'lucide-react';
 
 
-function AdminMap({ measurements, filter, mapRef }) {
+function AdminMap({ measurements, filter, mapRef, onSelectMeasurement }) {
   const [showAccuracy, setShowAccuracy] = useState(true);
 
   return (
@@ -46,6 +46,7 @@ function AdminMap({ measurements, filter, mapRef }) {
           showAccuracy={showAccuracy} 
           height="100%" 
           adminMode={true} 
+          onSelectMeasurement={onSelectMeasurement}
         />
       </div>
     </div>
@@ -1299,10 +1300,45 @@ export default function AdminPage() {
   const [measurements, setMeasurements] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
   const [selectedFieldForDrilldown, setSelectedFieldForDrilldown] = useState(null);
+  const [selectedMeasurement, setSelectedMeasurement] = useState(null);
   const mapRef = useRef(null);
+  const latestMeasurementRequestRef = useRef(0);
 
   const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [showAbnormalModal, setShowAbnormalModal] = useState(false);
+
+  const selectedEstateCode = useMemo(() => {
+    if (!selectedEstateId) return null;
+    return estates.find((estate) => estate.id === selectedEstateId)?.code || null;
+  }, [selectedEstateId, estates]);
+
+  const selectedDivisionCode = useMemo(() => {
+    if (!divisionFilterId) return null;
+    return divisions.find((div) => div.id === divisionFilterId)?.code || null;
+  }, [divisionFilterId, divisions]);
+  
+  const selectedFieldCode = useMemo(() => {
+    if (!fieldNoFilterId) return null;
+    return fields.find((f) => f.id === fieldNoFilterId)?.field_code || null;
+  }, [fieldNoFilterId, fields]);
+
+  const mapMeasurements = useMemo(() => {
+    return (measurements || []).filter((measurement) => {
+      if (selectedEstateCode && measurement.estate !== selectedEstateCode) return false;
+      if (selectedDivisionCode && measurement.division !== selectedDivisionCode) return false;
+      if (selectedFieldCode && measurement.fieldNo !== selectedFieldCode) return false;
+      return true;
+    });
+  }, [measurements, selectedEstateCode, selectedDivisionCode, selectedFieldCode]);
+
+  useEffect(() => {
+    const selectedStillVisible = selectedMeasurement &&
+      mapMeasurements.some((m) => m.id === selectedMeasurement.id);
+    if (selectedMeasurement && !selectedStillVisible) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedMeasurement(null);
+    }
+  }, [mapMeasurements, selectedMeasurement]);
 
   const censusSummaryData = useMemo(() => {
     if (!measurements || measurements.length === 0) {
@@ -1711,11 +1747,13 @@ export default function AdminPage() {
     setSelectedEstateId(val);
     setDivisionFilterId('');
     setFieldNoFilterId('');
+    setSelectedMeasurement(null);
   };
 
   const handleDivisionChange = (val) => {
     setDivisionFilterId(val);
     setFieldNoFilterId('');
+    setSelectedMeasurement(null);
   };
 
   const handleLogin = async (e) => {
@@ -1791,6 +1829,9 @@ export default function AdminPage() {
   const loadData = async () => {
     setLoadingData(true);
     setError('');
+    
+    const requestId = ++latestMeasurementRequestRef.current;
+
     try {
       const data = await fetchAdminMeasurements(token, {
         estate_id: selectedEstateId,
@@ -1800,19 +1841,29 @@ export default function AdminPage() {
         dateTo,
         status: statusFilter
       });
+
+      if (requestId !== latestMeasurementRequestRef.current) {
+        return;
+      }
+
       if (data.success) {
         setMeasurements(data.measurements || []);
       } else {
         handleAuthError(data.error);
       }
     } catch (err) {
+      if (requestId !== latestMeasurementRequestRef.current) {
+        return;
+      }
       if (err.message.includes('Invalid or expired')) {
         handleAuthError(err.message);
       } else {
         setError(`Failed to load measurements: ${err.message}`);
       }
     } finally {
-      setLoadingData(false);
+      if (requestId === latestMeasurementRequestRef.current) {
+        setLoadingData(false);
+      }
     }
   };
 
@@ -2201,7 +2252,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          <AdminMap measurements={measurements} filter={statusFilter} mapRef={mapRef} />
+          <AdminMap measurements={mapMeasurements} filter={statusFilter} mapRef={mapRef} onSelectMeasurement={setSelectedMeasurement} />
         </>
       )}
 
@@ -2253,6 +2304,44 @@ export default function AdminPage() {
           fields={fields}
           onClose={() => setShowAbnormalModal(false)}
         />
+      )}
+
+      {/* Tree Details Modal */}
+      {selectedMeasurement && (
+        <div className="modal-overlay" onClick={() => setSelectedMeasurement(null)}>
+          <div className="glass-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <h3 style={{ marginTop: 0, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between' }}>
+              Tree Details: {selectedMeasurement.treeNo}
+              <button className="btn" onClick={() => setSelectedMeasurement(null)} style={{ padding: '0.2rem 0.5rem', background: 'transparent', color: 'var(--text-muted)', boxShadow: 'none' }}>✕</button>
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem', wordBreak: 'break-word' }}>
+              <strong>Estate:</strong> <span>{selectedMeasurement.estate}</span>
+              <strong>Division:</strong> <span>{selectedMeasurement.division}</span>
+              <strong>Field No:</strong> <span>{selectedMeasurement.fieldNo}</span>
+              <strong>Date:</strong> <span>{selectedMeasurement.date ? new Date(selectedMeasurement.date).toLocaleString() : 'N/A'}</span>
+              <strong>Girth:</strong> <span>{selectedMeasurement.girth}"</span>
+              <strong>Condition:</strong> <span style={{ textTransform: 'capitalize' }}>{selectedMeasurement.treeCondition}</span>
+              {selectedMeasurement.conditionNote && (
+                <><strong>Note:</strong> <span>{selectedMeasurement.conditionNote}</span></>
+              )}
+              <strong>GPS:</strong> <span>{selectedMeasurement.latitude}, {selectedMeasurement.longitude}</span>
+              <strong>Accuracy:</strong> <span>{selectedMeasurement.gpsAccuracy ? `${selectedMeasurement.gpsAccuracy}m` : 'N/A'}</span>
+              {selectedMeasurement.operatorName && (
+                <><strong>Operator:</strong> <span>{selectedMeasurement.operatorName}</span></>
+              )}
+              {selectedMeasurement.abnormalFlag && (
+                <><strong>Alert:</strong> <span style={{ color: '#f44336', fontWeight: 'bold' }}>{selectedMeasurement.abnormalReason || 'Abnormal Reading'}</span></>
+              )}
+            </div>
+            {(myRole === 'superadmin' && selectedMeasurement.googleMapLink) && (
+              <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                <a href={selectedMeasurement.googleMapLink} target="_blank" rel="noreferrer" className="btn" style={{ textDecoration: 'none' }}>
+                  Open in Google Maps
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
