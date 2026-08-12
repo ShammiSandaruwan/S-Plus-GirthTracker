@@ -36,6 +36,7 @@ serve(async (req) => {
     const callerRole = auth.role!;
     const callerEstateIds = auth.estateIds!;
     const callerEstateCodes = auth.estateCodes!;
+    const callerEstateNames = auth.estateNames!;
 
     const body = await req.json();
     const { action } = body;
@@ -109,7 +110,7 @@ serve(async (req) => {
 
       // === DEVICES ===
       case 'list_devices':
-        return await listDevices(supabaseAdmin, callerRole, callerEstateIds, callerEstateCodes);
+        return await listDevices(supabaseAdmin, callerRole, callerEstateIds, callerEstateCodes, callerEstateNames);
       case 'revoke_device':
         return await revokeDevice(supabaseAdmin, body);
       case 'delete_device':
@@ -121,7 +122,7 @@ serve(async (req) => {
 
       // === PENDING REQUESTS ===
       case 'list_pending_requests':
-        return await listPendingRequests(supabaseAdmin, callerRole, callerEstateIds, callerEstateCodes);
+        return await listPendingRequests(supabaseAdmin, callerRole, callerEstateIds, callerEstateCodes, callerEstateNames);
 
       // === MIGRATION ===
       case 'migrate_devices':
@@ -425,8 +426,8 @@ async function validateSheetMapping(db: any, body: any) {
 
 // ======================== DEVICES ========================
 
-async function listDevices(db: any, callerRole: string, callerEstateIds: string[], callerEstateCodes: string[]) {
-  if (callerRole !== 'superadmin' && callerEstateCodes.length === 0) {
+async function listDevices(db: any, callerRole: string, callerEstateIds: string[], callerEstateCodes: string[], callerEstateNames: string[]) {
+  if (callerRole !== 'superadmin' && callerEstateCodes.length === 0 && callerEstateNames.length === 0) {
     return respond({ success: true, devices: [] });
   }
 
@@ -435,7 +436,8 @@ async function listDevices(db: any, callerRole: string, callerEstateIds: string[
     .order('approved_at', { ascending: false });
 
   if (callerRole !== 'superadmin') {
-    query = query.in('estate_code', callerEstateCodes);
+    const allValidCodes = Array.from(new Set([...callerEstateCodes, ...callerEstateNames]));
+    query = query.in('estate_code', allValidCodes);
   }
 
   const { data, error } = await query;
@@ -731,8 +733,8 @@ async function getSummary(db: any, body: any, callerRole: string, callerEstateId
 
 // ======================== PENDING REQUESTS ========================
 
-async function listPendingRequests(db: any, callerRole: string, callerEstateIds: string[], callerEstateCodes: string[]) {
-  if (callerRole !== 'superadmin' && callerEstateCodes.length === 0) {
+async function listPendingRequests(db: any, callerRole: string, callerEstateIds: string[], callerEstateCodes: string[], callerEstateNames: string[]) {
+  if (callerRole !== 'superadmin' && callerEstateCodes.length === 0 && callerEstateNames.length === 0) {
     return respond({ success: true, requests: [] });
   }
 
@@ -743,7 +745,8 @@ async function listPendingRequests(db: any, callerRole: string, callerEstateIds:
     .order('requested_at', { ascending: false });
 
   if (callerRole !== 'superadmin') {
-    query = query.in('estate_code', callerEstateCodes);
+    const allValidCodes = Array.from(new Set([...callerEstateCodes, ...callerEstateNames]));
+    query = query.in('estate_code', allValidCodes);
   }
 
   const { data, error } = await query;
