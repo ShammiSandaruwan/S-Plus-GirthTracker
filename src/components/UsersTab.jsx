@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Users, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Plus, Edit2, User, Shield } from 'lucide-react';
+import { Users, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Plus, Edit2, User, Shield, Clock } from 'lucide-react';
 
 const ROLE_BADGE = {
   superadmin: { label: 'SuperAdmin', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' },
@@ -75,7 +75,26 @@ function formatShortDate(val) {
   }
 }
 
-export default function UsersTab({ token, onAuthError }) {
+function formatRelativeTime(val) {
+  if (!val) return null;
+  try {
+    const date = new Date(val);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return formatShortDate(val);
+  } catch {
+    return String(val);
+  }
+}
+
+export default function UsersTab({ token, canInviteUsers, onAuthError }) {
   const [users, setUsers] = useState([]);
   const [estates, setEstates] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -284,7 +303,13 @@ export default function UsersTab({ token, onAuthError }) {
             <button className="btn btn-secondary" onClick={loadUsers} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
               {loading ? <RefreshCw className="pulse" size={14} /> : <RefreshCw size={14} />} Refresh
             </button>
-            <button className="btn" onClick={openInviteModal} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
+            <button
+              className="btn"
+              onClick={openInviteModal}
+              disabled={!canInviteUsers}
+              title={canInviteUsers ? 'Invite a new user' : 'Only the designated admin can invite users'}
+              style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem', opacity: canInviteUsers ? 1 : 0.5, cursor: canInviteUsers ? 'pointer' : 'not-allowed' }}
+            >
               <Plus size={14} /> Invite User
             </button>
           </div>
@@ -319,6 +344,7 @@ export default function UsersTab({ token, onAuthError }) {
                       <th style={{ padding: '0.5rem', textAlign: 'center' }}>Role</th>
                       <th style={{ padding: '0.5rem', textAlign: 'left' }}>Estates</th>
                       <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Last Login</th>
                       <th style={{ padding: '0.5rem', textAlign: 'left' }}>Created</th>
                       <th style={{ padding: '0.5rem', textAlign: 'center' }}>Action</th>
                     </tr>
@@ -340,6 +366,16 @@ export default function UsersTab({ token, onAuthError }) {
                             ? <span style={{ color: '#4caf50', fontSize: '0.78rem', fontWeight: 600 }}><CheckCircle2 size={12} style={{ verticalAlign: 'middle' }} /> Active</span>
                             : <span style={{ color: '#f44336', fontSize: '0.78rem', fontWeight: 600 }}><XCircle size={12} style={{ verticalAlign: 'middle' }} /> Inactive</span>
                           }
+                        </td>
+                        <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {u.last_sign_in_at ? (
+                            <span title={new Date(u.last_sign_in_at).toLocaleString()}>
+                              <Clock size={11} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                              {formatRelativeTime(u.last_sign_in_at)}
+                            </span>
+                          ) : (
+                            <span style={{ fontStyle: 'italic', opacity: 0.6 }}>Never</span>
+                          )}
                         </td>
                         <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatShortDate(u.created_at)}</td>
                         <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center' }}>
@@ -373,6 +409,10 @@ export default function UsersTab({ token, onAuthError }) {
                   )}
                   <div className="admin-field-card-meta">
                     Status: {u.active ? 'Active' : 'Inactive'} | Created: {formatShortDate(u.created_at)}
+                  </div>
+                  <div className="admin-field-card-meta">
+                    <Clock size={11} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                    Last Login: {u.last_sign_in_at ? formatRelativeTime(u.last_sign_in_at) : <span style={{ fontStyle: 'italic', opacity: 0.6 }}>Never</span>}
                   </div>
                   <div style={{ marginTop: '0.3rem', marginBottom: '0.4rem' }}>
                     {u.role === 'superadmin'

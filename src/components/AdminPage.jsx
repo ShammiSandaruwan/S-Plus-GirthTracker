@@ -1276,6 +1276,7 @@ export default function AdminPage() {
 
   // RBAC state
   const [myRole, setMyRole] = useState(null);
+  const [myCanInviteUsers, setMyCanInviteUsers] = useState(false);
   const [myEstateIds, setMyEstateIds] = useState([]);
   const [superAdmins, setSuperAdmins] = useState([]);
 
@@ -1799,6 +1800,7 @@ export default function AdminPage() {
         const { adminCRUD } = await import('../services/supabaseSync');
         const data = await adminCRUD(token, 'whoami', {});
         setMyRole(data.role);
+        setMyCanInviteUsers(data.canInviteUsers === true);
         setMyEstateIds(data.estateIds || []);
         setSuperAdmins(data.superAdmins || []);
       } catch (err) {
@@ -2281,7 +2283,7 @@ export default function AdminPage() {
 
       {/* Users Tab (SuperAdmin only - double-gated) */}
       {activeTab === 'users' && myRole === 'superadmin' && (
-        <UsersTab token={token} onAuthError={handleAuthError} />
+        <UsersTab token={token} canInviteUsers={myCanInviteUsers} onAuthError={handleAuthError} />
       )}
 
       {/* Detail Drilldown Panel */}

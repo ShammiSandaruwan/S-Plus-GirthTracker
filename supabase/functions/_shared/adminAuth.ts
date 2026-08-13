@@ -7,6 +7,7 @@ export interface AdminAuthResult {
   user?: any;
   adminUserId?: string;
   role?: 'superadmin' | 'admin' | 'manager';
+  canInviteUsers?: boolean;
   estateIds?: string[];
   estateCodes?: string[];
   estateNames?: string[];
@@ -23,7 +24,7 @@ export async function resolveAdminAuth(
 
   const { data: adminUser, error: adminError } = await supabaseAdmin
     .from('admin_users')
-    .select('id, role, admin_user_estates(estate_id, expires_at, estates(code, name))')
+    .select('id, role, can_invite_users, admin_user_estates(estate_id, expires_at, estates(code, name))')
     .eq('auth_uid', user.id)
     .eq('active', true)
     .single();
@@ -43,6 +44,7 @@ export async function resolveAdminAuth(
     user,
     adminUserId: adminUser.id,
     role: adminUser.role,
+    canInviteUsers: adminUser.can_invite_users === true,
     estateIds: activeEstateRows.map((r: any) => r.estate_id),
     estateCodes: activeEstateRows.map((r: any) => r.estates?.code).filter(Boolean),
     estateNames: activeEstateRows.map((r: any) => r.estates?.name).filter(Boolean),

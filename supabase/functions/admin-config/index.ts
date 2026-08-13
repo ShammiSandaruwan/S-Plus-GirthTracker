@@ -65,6 +65,7 @@ serve(async (req) => {
         return respond({
           success: true,
           role: callerRole,
+          canInviteUsers: auth.canInviteUsers === true,
           estateIds: callerEstateIds,
           estateNames: auth.estateNames,
           superAdmins: superAdmins?.map((sa: any) => sa.name).filter(Boolean) || []
@@ -138,6 +139,9 @@ serve(async (req) => {
       case 'list_admin_users':
         return await listAdminUsers(supabaseAdmin);
       case 'invite_admin_user':
+        if (!auth.canInviteUsers) {
+          return respond({ error: 'Forbidden: only the designated admin can invite users' }, 403);
+        }
         return await inviteAdminUser(supabaseAdmin, body);
       case 'update_admin_user':
         return await updateAdminUser(supabaseAdmin, body);
@@ -958,9 +962,23 @@ async function getFieldTreeReport(db: any, body: any, callerRole: string, caller
 async function listAdminUsers(db: any) {
   const { data, error } = await db
     .from('admin_users')
-    .select('id, email, name, role, active, created_at, admin_user_estates(estate_id, expires_at, estates(code, name))')
+    .select('id, auth_uid, email, name, role, active, created_at, can_invite_users, admin_user_estates(estate_id, expires_at, estates(code, name))')
     .order('created_at', { ascending: false });
   if (error) throw error;
+
+  // Merge last_sign_in_at from Supabase Auth
+  try {
+    const { data: authData } = await db.auth.admin.listUsers({ perPage: 1000 });
+    if (authData?.users) {
+      const authMap = new Map(authData.users.map((u: any) => [u.id, u.last_sign_in_at]));
+      for (const user of data) {
+        user.last_sign_in_at = authMap.get(user.auth_uid) || null;
+      }
+    }
+  } catch {
+    // Non-critical — users list still works without last_sign_in_at
+  }
+
   return respond({ success: true, users: data });
 }
 
