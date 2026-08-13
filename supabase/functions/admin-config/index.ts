@@ -55,6 +55,10 @@ serve(async (req) => {
     switch (action) {
       // === WHOAMI ===
       case 'whoami': {
+        // Stamp last_login_at on every dashboard load (fire-and-forget)
+        supabaseAdmin.from('admin_users').update({ last_login_at: new Date().toISOString() })
+          .eq('id', auth.adminUserId).then(() => {});
+
         const { data: superAdmins } = await supabaseAdmin
           .from('admin_users')
           .select('name')
@@ -962,23 +966,9 @@ async function getFieldTreeReport(db: any, body: any, callerRole: string, caller
 async function listAdminUsers(db: any) {
   const { data, error } = await db
     .from('admin_users')
-    .select('id, auth_uid, email, name, role, active, created_at, can_invite_users, admin_user_estates(estate_id, expires_at, estates(code, name))')
+    .select('id, email, name, role, active, created_at, last_login_at, can_invite_users, admin_user_estates(estate_id, expires_at, estates(code, name))')
     .order('created_at', { ascending: false });
   if (error) throw error;
-
-  // Merge last_sign_in_at from Supabase Auth
-  try {
-    const { data: authData } = await db.auth.admin.listUsers({ perPage: 1000 });
-    if (authData?.users) {
-      const authMap = new Map(authData.users.map((u: any) => [u.id, u.last_sign_in_at]));
-      for (const user of data) {
-        user.last_sign_in_at = authMap.get(user.auth_uid) || null;
-      }
-    }
-  } catch {
-    // Non-critical — users list still works without last_sign_in_at
-  }
-
   return respond({ success: true, users: data });
 }
 

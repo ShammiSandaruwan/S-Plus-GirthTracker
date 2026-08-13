@@ -368,10 +368,10 @@ export default function UsersTab({ token, canInviteUsers, onAuthError }) {
                           }
                         </td>
                         <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                          {u.last_sign_in_at ? (
-                            <span title={new Date(u.last_sign_in_at).toLocaleString()}>
+                          {u.last_login_at ? (
+                            <span title={new Date(u.last_login_at).toLocaleString()}>
                               <Clock size={11} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
-                              {formatRelativeTime(u.last_sign_in_at)}
+                              {formatRelativeTime(u.last_login_at)}
                             </span>
                           ) : (
                             <span style={{ fontStyle: 'italic', opacity: 0.6 }}>Never</span>
@@ -412,7 +412,7 @@ export default function UsersTab({ token, canInviteUsers, onAuthError }) {
                   </div>
                   <div className="admin-field-card-meta">
                     <Clock size={11} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
-                    Last Login: {u.last_sign_in_at ? formatRelativeTime(u.last_sign_in_at) : <span style={{ fontStyle: 'italic', opacity: 0.6 }}>Never</span>}
+                    Last Login: {u.last_login_at ? formatRelativeTime(u.last_login_at) : <span style={{ fontStyle: 'italic', opacity: 0.6 }}>Never</span>}
                   </div>
                   <div style={{ marginTop: '0.3rem', marginBottom: '0.4rem' }}>
                     {u.role === 'superadmin'
