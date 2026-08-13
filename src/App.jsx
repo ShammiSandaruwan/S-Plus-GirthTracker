@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Save, Settings2, Wifi, WifiOff, CloudUpload, RefreshCw, Download, Undo, Minus, Plus, FileSpreadsheet, Edit3, AlertTriangle, FileText, BarChart3, X } from 'lucide-react';
 import { db } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING } from './utils';
+import { parseCaliperBuffer, calculateGirth, escCsv, filterDisplayBuffer, MIN_READING, MAX_READING, DEAD_REASON_PRESETS, DAMAGED_REASON_PRESETS } from './utils';
 import AccessGate from './components/AccessGate';
 import SessionReport from './components/SessionReport';
 import FieldInsightsModal from './components/FieldInsightsModal';
@@ -1322,6 +1322,7 @@ function getFriendlySyncErrorMessage(errorObj) {
                   setTreeCondition(cond.id);
                   if (cond.id === 'dead' || cond.id === 'damaged') {
                     setManualEntry('');
+                    setConditionNote('');
                   }
                 }}
                 style={{ padding: '0.4rem 0.2rem', fontSize: '0.8rem', textAlign: 'center' }}
@@ -1359,6 +1360,19 @@ function getFriendlySyncErrorMessage(errorObj) {
               <label className="text-muted" style={{fontSize: '0.8rem', color: 'var(--accent-danger)'}}>
                 <Edit3 size={14} style={{display: 'inline', verticalAlign: 'text-bottom'}}/> Condition Note (Required for {treeCondition}) *
               </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', margin: '0.4rem 0' }}>
+                {(treeCondition === 'dead' ? DEAD_REASON_PRESETS : DAMAGED_REASON_PRESETS).map(preset => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className={`btn ${conditionNote === preset ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setConditionNote(preset)}
+                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', width: 'auto' }}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
               <div style={{display: 'flex', gap: '0.5rem'}}>
                 <input 
                   type="text" 

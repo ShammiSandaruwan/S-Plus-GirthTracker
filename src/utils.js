@@ -7,6 +7,25 @@
 export const MIN_READING = 0;
 export const MAX_READING = 30;
 
+export const DEAD_REASON_PRESETS = [
+  'Uprooted / fallen',
+  'Wind damage',
+  'Fire damage',
+  'Disease',
+  'Severe trunk / root damage',
+  'Drought / water stress',
+  'Other'
+];
+
+export const DAMAGED_REASON_PRESETS = [
+  'Animal damage',
+  'Porcupine damage',
+  'Wind damage',
+  'Fire damage',
+  'Trunk / bark damage',
+  'Other'
+];
+
 /**
  * Parse raw caliper buffer string into a numeric reading.
  * Handles comma-as-decimal, non-numeric chars, and calipers that
