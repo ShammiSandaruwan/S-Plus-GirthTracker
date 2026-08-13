@@ -4,7 +4,7 @@
  */
 
 // Caliper reading validation range (inches)
-export const MIN_READING = 0.5;
+export const MIN_READING = 0;
 export const MAX_READING = 30;
 
 /**

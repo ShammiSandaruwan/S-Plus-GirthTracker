@@ -571,6 +571,15 @@ function getFriendlySyncErrorMessage(errorObj) {
       return;
     }
 
+    // Validation passed. We are definitely going to save this measurement (or prompt for duplicate).
+    // Reset UI state IMMEDIATELY so the user can move on to the next tree without waiting for DB operations.
+    // This fixes a race condition where on slow devices (or if the DB is busy), the user might measure 
+    // the next tree before the state has updated back to 'healthy', causing it to inadvertently copy 
+    // the 'runt' or 'dead' condition to the next tree.
+    setTreeCondition('healthy');
+    setConditionNote('');
+    setManualEntry('');
+
     const loc = ENABLE_GPS_TAGGING ? getLastKnownLocation() : { latitude: null, longitude: null, accuracy: null, status: 'unavailable', googleMapLink: null };
 
     let fieldId = currentSettings.fieldId || null;
@@ -660,10 +669,6 @@ function getFriendlySyncErrorMessage(errorObj) {
 
     setSaveSummaryToast(summaryMsg);
     setTimeout(() => setSaveSummaryToast(''), 4000);
-
-    setManualEntry('');
-    setConditionNote('');
-    setTreeCondition('healthy');
 
     const nextTreeNo = parseInt(currentSettings.treeNo) + 1;
     const newSettings = { ...currentSettings, treeNo: nextTreeNo };
