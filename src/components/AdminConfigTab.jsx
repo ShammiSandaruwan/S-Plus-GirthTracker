@@ -30,7 +30,7 @@ export default function AdminConfigTab({ token }) {
   const [editingField, setEditingField] = useState(null);
 
   const [newMapping, setNewMapping] = useState({ estateId: '', spreadsheetId: '', tabName: '' });
-  const [backfilling, setBackfilling] = useState(false);
+  // const [backfilling, setBackfilling] = useState(false);
 
   const loadEstates = async () => {
     setLoading(true);
@@ -226,6 +226,7 @@ export default function AdminConfigTab({ token }) {
     }
   };
 
+  /*
   const handleBackfill = async () => {
     if (!window.confirm('Run field backfill? This will assign field_id to measurements that have null field_id.')) return;
     setBackfilling(true);
@@ -247,6 +248,7 @@ export default function AdminConfigTab({ token }) {
       setBackfilling(false);
     }
   };
+  */
 
   return (
     <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1rem' }}>
@@ -440,10 +442,12 @@ export default function AdminConfigTab({ token }) {
             <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
               Assigns field_id to legacy measurements based on estate, division, and field_no.
             </p>
+            {/* Temporarily disabled: no need for now
             <button className="btn" onClick={handleBackfill} disabled={backfilling} style={{ width: 'auto' }}>
               {backfilling ? <RefreshCw className="pulse" size={16} /> : <Database size={16} />} 
               {backfilling ? ' Running...' : ' Run Backfill'}
             </button>
+            */}
           </div>
 
           <div style={{ flex: '1 1 300px', padding: '1rem', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>

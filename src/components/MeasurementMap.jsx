@@ -367,10 +367,13 @@ export default function MeasurementMap({
                   eventHandlers={{ click: () => onSelectMeasurement && onSelectMeasurement(m) }}
                 >
                   <Popup>
-                    <div style={{ fontSize: '0.9rem', minWidth: '150px' }}>
-                      <strong>Tree: {m.treeNo}</strong><br />
-                      Girth: {m.girth}&quot;<br />
-                      Date: {m.date || (m.timestamp ? new Date(m.timestamp).toLocaleDateString() : 'Unknown')}<br />
+                      <div style={{ fontSize: '0.9rem', minWidth: '150px' }}>
+                        <strong>Tree: {m.treeNo}</strong><br />
+                        Division: {m.division || 'N/A'}<br />
+                        Field No: {m.fieldNo || m.field_no || 'N/A'}<br />
+                        Condition: <span style={{ textTransform: 'capitalize' }}>{m.treeCondition || 'healthy'}</span><br />
+                        Girth: {m.girth}&quot;<br />
+                        Date: {m.date || (m.timestamp ? new Date(m.timestamp).toLocaleDateString() : 'Unknown')}<br />
                       Status: {m.recommendationText || m.recommendationStatus || 'N/A'}<br />
 
                       {isAbnormal(m) && (

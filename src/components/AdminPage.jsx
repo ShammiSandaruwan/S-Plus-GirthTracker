@@ -193,9 +193,9 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Division</th>
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Field</th>
                           <th style={{ padding: '0.5rem', textAlign: 'right' }}>Extent</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Recorded</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Last Tree #</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Last Recorded</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Total Recorded</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Last Tree #</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Last Recorded</th>
                           <th style={{ padding: '0.5rem', textAlign: 'center' }}>Action</th>
                         </tr>
                       </thead>
@@ -224,11 +224,18 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                             >
                               <td style={{ padding: '0.4rem 0.5rem' }}>{f.estate_name}</td>
                               <td style={{ padding: '0.4rem 0.5rem' }}>{f.division_name}</td>
-                              <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>{f.field_code}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>
+                                {f.field_code}
+                                {f.completed_at && (
+                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', background: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', padding: '0.15rem 0.35rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Completed
+                                  </span>
+                                )}
+                              </td>
                               <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.extent || '-'}</td>
-                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', fontWeight: 600 }}>{f.total}</td>
-                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.last_tree_no}</td>
-                              <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.78rem' }}>{formatDate(f.last_recorded)}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center', fontWeight: 600 }}>{f.total}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>{f.last_tree_no}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center', fontSize: '0.78rem' }}>{formatDate(f.last_recorded)}</td>
                               <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center' }}>
                                 {isClickable ? (
                                   <span style={{ color: 'var(--accent-primary)', fontSize: '0.78rem', fontWeight: 600 }}>
@@ -759,6 +766,7 @@ function DevicesTab({ token, myRole, onAuthError }) {
           </h3>
           {canManageDevices && (
             <div style={{display: 'flex', gap: '0.5rem'}}>
+              {/* Temporarily disabled: no need for now
               <button className="btn btn-secondary" onClick={async () => {
                 if(!confirm('Migrate devices from GAS?')) return;
                 setLoading(true);
@@ -774,6 +782,7 @@ function DevicesTab({ token, myRole, onAuthError }) {
               }} disabled={loading} style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
                 Migrate GAS Devices
               </button>
+              */}
             </div>
           )}
         </div>
@@ -2259,7 +2268,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          <AdminMap measurements={mapMeasurements} filter={statusFilter} mapRef={mapRef} onSelectMeasurement={setSelectedMeasurement} />
+          <AdminMap measurements={mapMeasurements} filter={statusFilter} mapRef={mapRef} />
         </>
       )}
 
@@ -2313,43 +2322,7 @@ export default function AdminPage() {
         />
       )}
 
-      {/* Tree Details Modal */}
-      {selectedMeasurement && (
-        <div className="modal-overlay" onClick={() => setSelectedMeasurement(null)}>
-          <div className="glass-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-            <h3 style={{ marginTop: 0, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between' }}>
-              Tree Details: {selectedMeasurement.treeNo}
-              <button className="btn" onClick={() => setSelectedMeasurement(null)} style={{ padding: '0.2rem 0.5rem', background: 'transparent', color: 'var(--text-muted)', boxShadow: 'none' }}>✕</button>
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem', wordBreak: 'break-word' }}>
-              <strong>Estate:</strong> <span>{selectedMeasurement.estate}</span>
-              <strong>Division:</strong> <span>{selectedMeasurement.division}</span>
-              <strong>Field No:</strong> <span>{selectedMeasurement.fieldNo}</span>
-              <strong>Date:</strong> <span>{selectedMeasurement.date ? new Date(selectedMeasurement.date).toLocaleString() : 'N/A'}</span>
-              <strong>Girth:</strong> <span>{selectedMeasurement.girth}"</span>
-              <strong>Condition:</strong> <span style={{ textTransform: 'capitalize' }}>{selectedMeasurement.treeCondition}</span>
-              {selectedMeasurement.conditionNote && (
-                <><strong>Note:</strong> <span>{selectedMeasurement.conditionNote}</span></>
-              )}
-              <strong>GPS:</strong> <span>{selectedMeasurement.latitude}, {selectedMeasurement.longitude}</span>
-              <strong>Accuracy:</strong> <span>{selectedMeasurement.gpsAccuracy ? `${selectedMeasurement.gpsAccuracy}m` : 'N/A'}</span>
-              {selectedMeasurement.operatorName && (
-                <><strong>Operator:</strong> <span>{selectedMeasurement.operatorName}</span></>
-              )}
-              {selectedMeasurement.abnormalFlag && (
-                <><strong>Alert:</strong> <span style={{ color: '#f44336', fontWeight: 'bold' }}>{selectedMeasurement.abnormalReason || 'Abnormal Reading'}</span></>
-              )}
-            </div>
-            {(myRole === 'superadmin' && selectedMeasurement.googleMapLink) && (
-              <div style={{ marginTop: '1rem', textAlign: 'center' }}>
-                <a href={selectedMeasurement.googleMapLink} target="_blank" rel="noreferrer" className="btn" style={{ textDecoration: 'none' }}>
-                  Open in Google Maps
-                </a>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

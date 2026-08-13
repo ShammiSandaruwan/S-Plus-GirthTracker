@@ -654,7 +654,7 @@ async function getSummary(db: any, body: any, callerRole: string, callerEstateId
   // 1. Get all estates, divisions, fields (extent_ha column)
   const { data: rawEstates, error: estErr } = await db.from('estates').select('id, code, name, active').order('name');
   const { data: rawDivisions, error: divErr } = await db.from('divisions').select('id, code, name, active, estate_id').order('name');
-  const { data: rawFields, error: fldErr } = await db.from('fields').select('id, field_code, active, division_id, estate_id, extent_ha').order('field_code');
+  const { data: rawFields, error: fldErr } = await db.from('fields').select('id, field_code, active, division_id, estate_id, extent_ha, completed_at').order('field_code');
 
   if (!rawEstates || !rawDivisions || !rawFields) {
     return respond({ error: 'Failed to load configuration data', details: { estErr, divErr, fldErr } }, 500);
@@ -702,6 +702,7 @@ async function getSummary(db: any, body: any, callerRole: string, callerEstateId
         field_code: field.field_code,
         field_active: field.active,
         extent: field.extent_ha,
+        completed_at: field.completed_at,
         division_id: field.division_id,
         division_name: division?.name || '-',
         estate_id: field.estate_id,
