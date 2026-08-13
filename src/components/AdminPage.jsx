@@ -76,7 +76,12 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
       });
       if (data.success) {
         setSummary(data.summary);
-        setFieldDetails(data.field_details || []);
+        const sortedFields = (data.field_details || []).sort((a, b) => {
+          if (!a.last_recorded) return 1;
+          if (!b.last_recorded) return -1;
+          return new Date(b.last_recorded) - new Date(a.last_recorded);
+        });
+        setFieldDetails(sortedFields);
       } else {
         onAuthError(data.error);
       }
