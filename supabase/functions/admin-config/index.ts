@@ -977,8 +977,8 @@ async function inviteAdminUser(db: any, body: any) {
   const { email, name, role, estateAssignments } = body;
   if (!email || !role) return respond({ error: 'email and role are required' }, 400);
   if (!['superadmin', 'admin', 'manager'].includes(role)) return respond({ error: 'Invalid role' }, 400);
-  if (role === 'manager' && (!estateAssignments || estateAssignments.length !== 1)) {
-    return respond({ error: 'Managers must be assigned exactly one estate' }, 400);
+  if (role === 'manager' && (!estateAssignments || estateAssignments.length === 0)) {
+    return respond({ error: 'Managers must be assigned at least one estate' }, 400);
   }
   if (role === 'admin' && (!estateAssignments || estateAssignments.length === 0)) {
     return respond({ error: 'Admins must be assigned at least one estate' }, 400);
@@ -1024,8 +1024,8 @@ async function updateAdminUser(db: any, body: any) {
   if (role !== undefined) updates.role = role;
   if (active !== undefined) updates.active = active;
 
-  if (role === 'manager' && (!estateAssignments || estateAssignments.length !== 1)) {
-    return respond({ error: 'Managers must be assigned exactly one estate' }, 400);
+  if (role === 'manager' && (!estateAssignments || estateAssignments.length === 0)) {
+    return respond({ error: 'Managers must be assigned at least one estate' }, 400);
   }
   if (role === 'admin' && (!estateAssignments || estateAssignments.length === 0)) {
     return respond({ error: 'Admins must be assigned at least one estate' }, 400);

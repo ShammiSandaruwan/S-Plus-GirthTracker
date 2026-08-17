@@ -206,8 +206,8 @@ export default function UsersTab({ token, canInviteUsers, onAuthError }) {
     if (formRole === 'superadmin') return null; // no estate assignments needed
 
     const validAssignments = formAssignments.filter(a => a.estateId);
-    if (formRole === 'manager' && validAssignments.length !== 1) {
-      return 'Managers must be assigned exactly one estate';
+    if (formRole === 'manager' && validAssignments.length === 0) {
+      return 'Managers must be assigned at least one estate';
     }
     if (formRole === 'admin' && validAssignments.length === 0) {
       return 'Admins must be assigned at least one estate';
@@ -289,7 +289,7 @@ export default function UsersTab({ token, canInviteUsers, onAuthError }) {
   }, [estates, formAssignments]);
 
   // Max estates for the role
-  const maxEstates = formRole === 'manager' ? 1 : Infinity;
+  const maxEstates = Infinity;
   const canAddMore = formRole !== 'superadmin' && formAssignments.length < maxEstates && availableEstates.length > 0;
 
   return (
@@ -513,8 +513,6 @@ export default function UsersTab({ token, canInviteUsers, onAuthError }) {
                     // Reset assignments when switching to superadmin or constraining to 1 for manager
                     if (newRole === 'superadmin') {
                       setFormAssignments([]);
-                    } else if (newRole === 'manager' && formAssignments.length > 1) {
-                      setFormAssignments([formAssignments[0]]);
                     } else if (newRole !== 'superadmin' && formAssignments.length === 0) {
                       setFormAssignments([{ estateId: '', expiresAt: '' }]);
                     }
@@ -523,7 +521,7 @@ export default function UsersTab({ token, canInviteUsers, onAuthError }) {
                 >
                   <option value="superadmin">SuperAdmin - All estates, full access</option>
                   <option value="admin">Admin - Multiple estates, view-only</option>
-                  <option value="manager">Manager - Single estate, view-only</option>
+                  <option value="manager">Manager - Multiple estates, view-only</option>
                 </select>
               </div>
 
@@ -553,7 +551,7 @@ export default function UsersTab({ token, canInviteUsers, onAuthError }) {
                   <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.85rem' }}>
                     Estate Assignments *
                     <span style={{ fontWeight: 400, fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                      {formRole === 'manager' ? '(exactly 1)' : '(1 or more)'}
+                      (1 or more)
                     </span>
                   </label>
 
