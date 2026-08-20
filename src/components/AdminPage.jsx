@@ -192,7 +192,9 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Estate</th>
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Division</th>
                           <th style={{ padding: '0.5rem', textAlign: 'left' }}>Field</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status</th>
                           <th style={{ padding: '0.5rem', textAlign: 'right' }}>Extent</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>SPH</th>
                           <th style={{ padding: '0.5rem', textAlign: 'center' }}>Total Recorded</th>
                           <th style={{ padding: '0.5rem', textAlign: 'center' }}>Last Tree #</th>
                           <th style={{ padding: '0.5rem', textAlign: 'center' }}>Last Recorded</th>
@@ -202,6 +204,8 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                       <tbody>
                         {fieldDetails.map((f, i) => {
                           const isClickable = Boolean(f.field_id && onSelectField);
+                          const extentVal = parseFloat(f.extent);
+                          const sphVal = (extentVal && extentVal > 0 && f.total) ? Math.round(f.total / extentVal) : (extentVal && extentVal > 0 ? 0 : '-');
                           return (
                             <tr
                               key={f.field_id || i}
@@ -224,15 +228,20 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                             >
                               <td style={{ padding: '0.4rem 0.5rem' }}>{f.estate_name}</td>
                               <td style={{ padding: '0.4rem 0.5rem' }}>{f.division_name}</td>
-                              <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>
-                                {f.field_code}
-                                {f.completed_at && (
-                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', background: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', padding: '0.15rem 0.35rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>{f.field_code}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center' }}>
+                                {f.completed_at ? (
+                                  <span style={{ fontSize: '0.65rem', background: 'rgba(76, 175, 80, 0.12)', color: '#4caf50', padding: '0.15rem 0.4rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'inline-block' }}>
                                     Completed
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: '0.65rem', background: 'rgba(255, 152, 0, 0.12)', color: '#ff9800', padding: '0.15rem 0.4rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'inline-block' }}>
+                                    On Going
                                   </span>
                                 )}
                               </td>
                               <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>{f.extent || '-'}</td>
+                              <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center', fontWeight: 600 }}>{sphVal}</td>
                               <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center', fontWeight: 600 }}>{f.total}</td>
                               <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>{f.last_tree_no}</td>
                               <td style={{ padding: '0.4rem 0.5rem', textAlign: 'center', fontSize: '0.78rem' }}>{formatDate(f.last_recorded)}</td>
@@ -259,6 +268,8 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                 <div className="admin-table-mobile">
                   {fieldDetails.map((f, i) => {
                     const isClickable = Boolean(f.field_id && onSelectField);
+                    const extentVal = parseFloat(f.extent);
+                    const sphVal = (extentVal && extentVal > 0 && f.total) ? Math.round(f.total / extentVal) : (extentVal && extentVal > 0 ? 0 : '-');
                     return (
                       <div
                         key={f.field_id || i}
@@ -277,7 +288,18 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                         style={{ cursor: isClickable ? 'pointer' : 'default' }}
                       >
                         <div className="admin-field-card-header">
-                          <span style={{ fontWeight: 700 }}>{f.field_code}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontWeight: 700 }}>{f.field_code}</span>
+                            {f.completed_at ? (
+                              <span style={{ fontSize: '0.65rem', background: 'rgba(76, 175, 80, 0.12)', color: '#4caf50', padding: '0.15rem 0.35rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                                Completed
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.65rem', background: 'rgba(255, 152, 0, 0.12)', color: '#ff9800', padding: '0.15rem 0.35rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                                On Going
+                              </span>
+                            )}
+                          </div>
                           <span className="admin-field-card-badge" style={{ background: 'rgba(76,175,80,0.15)', color: '#4caf50' }}>
                             {f.total} trees
                           </span>
@@ -285,8 +307,9 @@ function SummaryTab({ token, onAuthError, onSelectField }) {
                         <div className="admin-field-card-meta">{f.estate_name} / {f.division_name}</div>
                         <div className="admin-field-card-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                           <div className="text-muted" style={{ fontSize: '0.75rem' }}>Extent: <span style={{ color: 'var(--text-color)' }}>{f.extent || '-'}</span></div>
+                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>SPH: <span style={{ color: 'var(--text-color)', fontWeight: 600 }}>{sphVal}</span></div>
                           <div className="text-muted" style={{ fontSize: '0.75rem' }}>Last Tree: <span style={{ color: 'var(--text-color)' }}>{f.last_tree_no}</span></div>
-                          <div className="text-muted" style={{ fontSize: '0.75rem', gridColumn: 'span 2' }}>Last Rec: <span style={{ color: 'var(--text-color)' }}>{formatDate(f.last_recorded)}</span></div>
+                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>Last Rec: <span style={{ color: 'var(--text-color)' }}>{formatDate(f.last_recorded)}</span></div>
                         </div>
                         {isClickable && (
                           <div style={{ marginTop: '0.5rem', textAlign: 'right', fontSize: '0.78rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
