@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { BarChart3, X, RefreshCw, AlertTriangle, Activity, Database, CheckCircle2 } from 'lucide-react';
+import { BarChart3, X, RefreshCw, AlertTriangle, Activity, Database, CheckCircle2, User } from 'lucide-react';
 
 export default function FieldDrilldown({ token, field, measurements, onClose, onAuthError }) {
   const [reportData, setReportData] = useState(null);
@@ -8,6 +8,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
   const [retryCount, setRetryCount] = useState(0);
 
   const [selectedCondition, setSelectedCondition] = useState(null);
+  const [selectedGirthBand, setSelectedGirthBand] = useState(null);
 
   const matchingMeasurements = useMemo(() => {
     if (!field || !measurements || measurements.length === 0) return [];
@@ -75,6 +76,14 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       else girthDist.over20++;
     });
 
+    // Extract unique operator names from client-side measurements
+    const opSet = new Set();
+    rows.forEach(r => {
+      if (r.operatorName) opSet.add(r.operatorName.trim());
+    });
+    const operators = [...opSet].sort();
+    const operatorDisplay = operators.length > 0 ? operators.join(' | ') : '-';
+
     return {
       missingTreeNumbers: missing,
       gapCount: missing.length,
@@ -83,7 +92,9 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       healthStats,
       girthDist,
       treeRows: matchingMeasurements,
-      totalRecords: matchingMeasurements.length
+      totalRecords: matchingMeasurements.length,
+      operators,
+      operatorDisplay
     };
   }, [matchingMeasurements]);
 
@@ -142,16 +153,25 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
   };
 
   const girthBands = [
-    { label: '< 4"', key: 'lessThan4' },
-    { label: '4" - 7.9"', key: 'band4to7_9' },
-    { label: '8" - 9.9"', key: 'band8to9_9' },
-    { label: '10" - 11.9"', key: 'band10to11_9' },
-    { label: '12" - 13.9"', key: 'band12to13_9' },
-    { label: '14" - 15.9"', key: 'band14to15_9' },
-    { label: '16" - 17.9"', key: 'band16to17_9' },
-    { label: '18" - 19.9"', key: 'band18to19_9' },
-    { label: '20"+', key: 'over20' },
+    { label: '< 4"', key: 'lessThan4', min: -Infinity, max: 4 },
+    { label: '4" - 7.9"', key: 'band4to7_9', min: 4, max: 8 },
+    { label: '8" - 9.9"', key: 'band8to9_9', min: 8, max: 10 },
+    { label: '10" - 11.9"', key: 'band10to11_9', min: 10, max: 12 },
+    { label: '12" - 13.9"', key: 'band12to13_9', min: 12, max: 14 },
+    { label: '14" - 15.9"', key: 'band14to15_9', min: 14, max: 16 },
+    { label: '16" - 17.9"', key: 'band16to17_9', min: 16, max: 18 },
+    { label: '18" - 19.9"', key: 'band18to19_9', min: 18, max: 20 },
+    { label: '20"+', key: 'over20', min: 20, max: Infinity },
   ];
+
+  const getTreesForGirthBand = (band) => {
+    if (!activeData?.treeRows) return [];
+    return activeData.treeRows.filter(m => {
+      const g = parseFloat(m.girth);
+      if (isNaN(g)) return false;
+      return g >= band.min && g < band.max;
+    }).sort((a, b) => (a.treeNo ?? 0) - (b.treeNo ?? 0));
+  };
 
   return (
     <div
@@ -269,6 +289,14 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
                     <strong style={{ color: 'var(--accent-primary)' }}>{activeData.totalRecords} trees</strong>
                   </div>
                 )}
+                <div>
+                  <span className="text-muted" style={{ fontSize: '0.75rem', display: 'block' }}>
+                    <User size={11} style={{ verticalAlign: '-1px', marginRight: '0.2rem' }} />Operator
+                  </span>
+                  <strong style={{ fontSize: '0.82rem', wordBreak: 'break-word' }}>
+                    {activeData.operatorDisplay || '-'}
+                  </strong>
+                </div>
               </div>
             </div>
 
@@ -340,9 +368,29 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
                 {girthBands.map(b => {
                   const count = activeData.girthDist?.[b.key] || 0;
                   return (
-                    <div key={b.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '0.2rem 0.4rem', borderRadius: '4px', background: 'var(--bg-secondary, rgba(0,0,0,0.15))' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{b.label}</span>
-                      <strong style={{ fontWeight: 600 }}>{count}</strong>
+                    <div
+                      key={b.key}
+                      onClick={() => { if (count > 0) setSelectedGirthBand(b); }}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '0.82rem',
+                        padding: '0.3rem 0.5rem',
+                        borderRadius: '4px',
+                        background: 'var(--bg-secondary, rgba(0,0,0,0.15))',
+                        cursor: count > 0 ? 'pointer' : 'default',
+                        transition: 'background 0.15s, transform 0.1s',
+                        border: count > 0 ? '1px solid transparent' : 'none',
+                      }}
+                      onMouseEnter={(e) => { if (count > 0) { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)'; e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.3)'; } }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-secondary, rgba(0,0,0,0.15))'; e.currentTarget.style.borderColor = 'transparent'; }}
+                    >
+                      <span style={{ color: count > 0 ? 'var(--text-color)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        {b.label}
+                        {count > 0 && <span style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', opacity: 0.7 }}>▸</span>}
+                      </span>
+                      <strong style={{ fontWeight: 600, color: count > 0 ? 'var(--text-color)' : 'var(--text-muted)' }}>{count}</strong>
                     </div>
                   );
                 })}
@@ -355,7 +403,7 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
       {/* Condition Trees Modal */}
       {selectedCondition && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div style={{ background: 'var(--bg-main)', color: 'var(--text-main)', width: '100%', maxWidth: '400px', maxHeight: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+          <div style={{ background: 'var(--bg-main)', color: 'var(--text-main)', width: '100%', maxWidth: '480px', maxHeight: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
             <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)' }}>
               <h3 style={{ margin: 0, fontSize: '1.1rem', textTransform: 'capitalize' }}>{selectedCondition} Trees</h3>
               <button onClick={() => setSelectedCondition(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)' }}>
@@ -400,6 +448,70 @@ export default function FieldDrilldown({ token, field, measurements, onClose, on
                       })}
                     </tbody>
                   </table>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Girth Band Trees Modal */}
+      {selectedGirthBand && (
+        <div
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={() => setSelectedGirthBand(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: 'var(--bg-main)', color: 'var(--text-main)', width: '100%', maxWidth: '520px', maxHeight: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}
+          >
+            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>
+                Trees in {selectedGirthBand.label} band
+              </h3>
+              <button onClick={() => setSelectedGirthBand(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)' }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ padding: '1rem', overflowY: 'auto' }}>
+              {(() => {
+                const filtered = getTreesForGirthBand(selectedGirthBand);
+                
+                if (filtered.length === 0) return <div style={{ color: 'var(--text-muted)' }}>No trees found in this band.</div>;
+                
+                return (
+                  <>
+                    <div style={{ marginBottom: '0.75rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      {filtered.length} tree{filtered.length !== 1 ? 's' : ''} in the <strong style={{ color: 'var(--accent-primary)' }}>{selectedGirthBand.label}</strong> girth range
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                            <th style={{ textAlign: 'left', padding: '0.5rem', width: '2.5rem' }}>#</th>
+                            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Tree No</th>
+                            <th style={{ textAlign: 'right', padding: '0.5rem' }}>Girth (in)</th>
+                            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Condition</th>
+                            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Operator</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map((m, i) => {
+                            const condStr = (m.treeCondition || 'healthy').replace('_', ' ');
+                            return (
+                              <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                <td style={{ padding: '0.4rem 0.5rem', color: 'var(--text-muted)', fontSize: '0.78rem' }}>{i + 1}</td>
+                                <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }}>{m.treeNo ?? '-'}</td>
+                                <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', fontWeight: 600, color: 'var(--accent-primary)' }}>{m.girth ?? '-'}</td>
+                                <td style={{ padding: '0.4rem 0.5rem', textTransform: 'capitalize', fontSize: '0.8rem' }}>{condStr}</td>
+                                <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{m.operatorName || '-'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 );
               })()}
             </div>

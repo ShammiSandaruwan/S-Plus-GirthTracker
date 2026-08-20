@@ -726,6 +726,9 @@ async function getSummary(db: any, body: any, callerRole: string, callerEstateId
     filtered = filtered.filter((f: any) => f.division_id === body.division_id);
   }
 
+  // Collect all field IDs that have census records (for dropdown filtering)
+  const fieldsWithCensusIds = fieldDetails.map((f: any) => f.field_id);
+
   return respond({
     success: true,
     summary: {
@@ -737,6 +740,7 @@ async function getSummary(db: any, body: any, callerRole: string, callerEstateId
       divisions: allDivisions,
     },
     field_details: filtered,
+    fields_with_census_ids: fieldsWithCensusIds,
   });
 }
 
@@ -836,7 +840,7 @@ async function getFieldTreeReport(db: any, body: any, callerRole: string, caller
       const toIndex = (page + 1) * PAGE_SIZE - 1;
       const { data, error: linkedErr } = await db
         .from('census_measurements')
-        .select('tree_no, girth, tree_condition, condition_note')
+        .select('tree_no, girth, tree_condition, condition_note, operator_name')
         .eq('field_id', fieldRow.id)
         .range(fromIndex, toIndex);
 
@@ -866,7 +870,7 @@ async function getFieldTreeReport(db: any, body: any, callerRole: string, caller
       const toIndex = (page + 1) * PAGE_SIZE - 1;
       const { data, error: legacyErr } = await db
         .from('census_measurements')
-        .select('tree_no, girth, tree_condition, condition_note, estate, division, field_no, field_id')
+        .select('tree_no, girth, tree_condition, condition_note, operator_name, estate, division, field_no, field_id')
         .ilike('field_no', searchCode)
         .range(fromIndex, toIndex);
 
@@ -942,11 +946,20 @@ async function getFieldTreeReport(db: any, body: any, callerRole: string, caller
     else girthDist.over20++;
   });
 
+  // Extract unique operator names
+  const operatorSet = new Set<string>();
+  rows.forEach(r => {
+    if (r.operator_name) operatorSet.add(r.operator_name.trim());
+  });
+  const operators = [...operatorSet].sort();
+  const operatorDisplay = operators.length > 0 ? operators.join(' | ') : '-';
+
   const treeRows = rows.map((r: any) => ({
     treeNo: r.tree_no,
     girth: r.girth,
     treeCondition: r.tree_condition,
-    conditionNote: r.condition_note || null
+    conditionNote: r.condition_note || null,
+    operatorName: r.operator_name || null
   }));
 
   return respond({
@@ -958,7 +971,10 @@ async function getFieldTreeReport(db: any, body: any, callerRole: string, caller
     duplicateCount: duplicates.length,
     healthStats,
     girthDist,
-    treeRows
+    treeRows,
+    operators,
+    operatorDisplay,
+    totalRecords: rows.length
   });
 }
 

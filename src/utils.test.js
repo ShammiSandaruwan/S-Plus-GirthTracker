@@ -52,10 +52,10 @@ describe('Reading Validation', () => {
     expect(validateReading(29).valid).toBe(true);
   });
 
-  it('rejects readings below MIN_READING (0.5)', () => {
-    const res = validateReading(0.4);
+  it('rejects readings at or below zero', () => {
+    const res = validateReading(0);
     expect(res.valid).toBe(false);
-    expect(res.reason).toMatch(/below minimum/);
+    expect(res.reason).toMatch(/positive number/);
   });
 
   it('rejects readings above MAX_READING (30)', () => {

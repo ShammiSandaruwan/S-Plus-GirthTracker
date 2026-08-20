@@ -1321,6 +1321,7 @@ export default function AdminPage() {
 
   const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [showAbnormalModal, setShowAbnormalModal] = useState(false);
+  const [fieldsWithCensusIds, setFieldsWithCensusIds] = useState(null);
 
   const selectedEstateCode = useMemo(() => {
     if (!selectedEstateId) return null;
@@ -1738,6 +1739,16 @@ export default function AdminPage() {
           setDivisions(divRes.divisions || []);
           setFields(fldRes.fields || []);
           setConfigLoaded(true);
+
+          // Fetch census field IDs for Measurements Tab dropdown filtering
+          try {
+            const summaryRes = await adminCRUD(token, 'get_summary', {});
+            if (summaryRes.success && summaryRes.fields_with_census_ids) {
+              setFieldsWithCensusIds(new Set(summaryRes.fields_with_census_ids));
+            }
+          } catch {
+            // Non-critical: if this fails, show all fields (no filtering)
+          }
         } else {
           setError('Failed to load full configuration. Session may have expired.');
           await supabase.auth.signOut();
@@ -2085,7 +2096,7 @@ export default function AdminPage() {
                 <label>Field No</label>
                 <select value={fieldNoFilterId} onChange={(e) => setFieldNoFilterId(e.target.value)} disabled={!divisionFilterId}>
                   <option value="">All Fields</option>
-                  {fields.filter(f => f.division_id === divisionFilterId).map(fld => (
+                  {fields.filter(f => f.division_id === divisionFilterId && (!fieldsWithCensusIds || fieldsWithCensusIds.has(f.id))).map(fld => (
                     <option key={fld.id} value={fld.id}>{fld.field_code} {!fld.active && '(Inactive)'}</option>
                   ))}
                 </select>
